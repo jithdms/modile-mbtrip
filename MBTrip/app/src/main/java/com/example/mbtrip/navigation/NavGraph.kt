@@ -10,6 +10,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.mbtrip.ui.component.TripExampleScreen
 
 // 화면 라우트(경로) 정의
 sealed class Screen(val route: String) {
@@ -35,12 +36,17 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
         }
         // 3. 홈(마이페이지) 화면
         composable(Screen.Home.route) {
-            PlaceholderScreen(title = "마이페이지 / 여행 목록", onNext = { navController.navigate(Screen.CreateTrip.route) })
+            TripExampleScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateNext = { navController.navigate(Screen.CreateTrip.route) }
+            )
         }
         // 4. 여행 생성 화면
         composable(Screen.CreateTrip.route) {
             PlaceholderScreen(title = "여행 생성·초대 화면", onNext = { navController.popBackStack() })
         }
+
+
     }
 }
 
