@@ -43,9 +43,9 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
                 onNavigateNext = { navController.navigate(Screen.CreateTrip.route) }
             )
         }
-        // 4. 여행 생성 화면
+        // 4. 초대 생성 화면
         composable(Screen.CreateTrip.route) {
-            PlaceholderScreen(title = "여행 생성·초대 화면", onNext = { navController.popBackStack() })
+            PlaceholderScreen(title = "초대 화면", onNext = { navController.popBackStack() })
         }
         // 5. 랜딩화면
         composable(Screen.Landing.route) {
