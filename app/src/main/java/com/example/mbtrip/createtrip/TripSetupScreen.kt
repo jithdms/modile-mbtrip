@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -101,14 +102,8 @@ fun TripSetupScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Color.White)) {
-        // ── 맨 위: ◀ 뒤로가기 + 프로필 줄 ──
-        Row(
-            Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BackButton(onBack)
-            MemberRow(members, onInviteClick)
-        }
+        // ── 맨 위: 프로필 줄 ──
+        MemberRow(members, onInviteClick, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
         HorizontalDivider()
 
         Column(
@@ -125,6 +120,9 @@ fun TripSetupScreen(
                     .padding(horizontal = 16.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // ── 카드 왼쪽 위: ◀ 뒤로가기 (누르는 영역 48dp, 카드 여백만큼 당겨서 모서리에 붙임) ──
+                BackButton(onBack, Modifier.offset(x = (-12).dp, y = (-12).dp))
+
                 // ── 숙소 (당일치기면 숨김) ──
                 AnimatedVisibility(visible = !setup.dayTrip) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
