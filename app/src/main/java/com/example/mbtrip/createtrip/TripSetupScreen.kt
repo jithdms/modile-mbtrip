@@ -17,17 +17,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -47,11 +39,9 @@ import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Member
 import com.example.mbtrip.timeline.ui.BackButton
 import com.example.mbtrip.timeline.ui.MemberRow
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneOffset
 
 /** 어느 칸의 날짜·시간을 고르는 중인지 */
 private enum class Field { CHECK_IN, CHECK_OUT, LEG_DEPARTURE, LEG_ARRIVAL }
@@ -90,7 +80,6 @@ fun TripSetupScreen(
     var setup by remember { mutableStateOf(initial) }
     var tab by remember { mutableStateOf(LegDirection.OUTBOUND) }
     var picking by remember { mutableStateOf<Field?>(null) }
-    var pickedDate by remember { mutableStateOf<LocalDate?>(null) } // 날짜 고른 뒤 시간 고르는 중
     var triedSave by remember { mutableStateOf(false) }
 
     val problem = setup.problem(tripStart, tripEnd)
@@ -183,49 +172,39 @@ fun TripSetupScreen(
         }
     }
 
-    // ── 1) 날짜 고르기 → 2) 시간 고르기 ──
+    // ── 날짜·시간 선택 시트 (달력 + 시간 휠) ──
     val field = picking
-    if (field != null && pickedDate == null) key(field, tab) {
-        val current = valueOf(field)
-        val startDay = defaultDate(field, setup, tripStart)
-        val dateState = rememberDatePickerState(
-            initialSelectedDateMillis = (current?.toLocalDate() ?: startDay).toUtcMillis(),
-            selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    val d = utcTimeMillis.toLocalDate()
-                    return (tripStart == null || d >= tripStart) && (tripEnd == null || d <= tripEnd)
-                }
+    if (field != null) key(field, tab) {
+        val leg = setup.leg(tab)
+        val marked = when (field) {
+            Field.CHECK_OUT -> setup.checkIn?.toLocalDate()
+            Field.LEG_ARRIVAL -> leg.departure?.toLocalDate()
+            else -> null
+        }
+        val start = valueOf(field)
+            ?: LocalDateTime.of(marked ?: defaultDate(field, setup, tripStart), defaultTime(field))
+        DateTimePickerSheet(
+            title = sheetTitle(field, tab),
+            initial = start,
+            minDate = tripStart,
+            maxDate = tripEnd,
+            markedDate = marked,
+            onDismiss = { picking = null },
+            onConfirm = { v ->
+                write(field, v)
+                picking = null
             },
         )
-        DatePickerDialog(
-            onDismissRequest = { picking = null },
-            confirmButton = {
-                TextButton(
-                    onClick = { pickedDate = dateState.selectedDateMillis?.toLocalDate() },
-                    enabled = dateState.selectedDateMillis != null,
-                ) { Text("다음") }
-            },
-            dismissButton = { TextButton(onClick = { picking = null }) { Text("취소") } },
-        ) { DatePicker(state = dateState, showModeToggle = false) }
     }
+}
 
-    val date = pickedDate
-    if (field != null && date != null) key(field, tab, date) {
-        val t = valueOf(field)?.toLocalTime() ?: defaultTime(field)
-        val timeState = rememberTimePickerState(initialHour = t.hour, initialMinute = t.minute, is24Hour = false)
-        AlertDialog(
-            onDismissRequest = { pickedDate = null; picking = null },
-            title = { Text("${date.monthValue}월 ${date.dayOfMonth}일 · 시간 선택", fontSize = 16.sp) },
-            text = { TimePicker(state = timeState) },
-            confirmButton = {
-                TextButton(onClick = {
-                    write(field, LocalDateTime.of(date, LocalTime.of(timeState.hour, timeState.minute)))
-                    pickedDate = null
-                    picking = null
-                }) { Text("확인") }
-            },
-            dismissButton = { TextButton(onClick = { pickedDate = null }) { Text("날짜 다시") } },
-        )
+private fun sheetTitle(f: Field, tab: LegDirection): String {
+    val legName = if (tab == LegDirection.OUTBOUND) "가는 편" else "오는 편"
+    return when (f) {
+        Field.CHECK_IN -> "체크인 날짜·시간"
+        Field.CHECK_OUT -> "체크아웃 날짜·시간"
+        Field.LEG_DEPARTURE -> "$legName 출발"
+        Field.LEG_ARRIVAL -> "$legName 도착"
     }
 }
 
@@ -303,9 +282,6 @@ private fun defaultTime(f: Field): LocalTime = when (f) {
     else -> LocalTime.of(9, 0)
 }
 
-/* DatePicker 는 날짜를 'UTC 자정 밀리초'로 주고받는다 */
-private fun LocalDate.toUtcMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-private fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 760)
 @Composable
