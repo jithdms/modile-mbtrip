@@ -14,6 +14,6 @@ import com.example.mbtrip.timeline.vote.VoteActions
  * ▶ 최재성 님 투표 로직이 나오면 voteActions 를 그 클래스로 바꾸기
  */
 object TimelineDependencies {
-    var blockRepository: BlockRepository = FakeBlockRepository(FakeBlocks.blocks)
+    var blockRepository: BlockRepository = FirestoreBlockRepository()
     var voteActions: VoteActions = FakeVoteActions
 }
