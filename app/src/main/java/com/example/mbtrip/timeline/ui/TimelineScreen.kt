@@ -65,6 +65,7 @@ private data class EditorState(val block: Block, val isNew: Boolean)
  * @param markers      체크인·체크아웃 시각 (파란 선)
  * @param now          현재 시각 표시선 위치 (빨간 선). null 이면 표시하지 않음
  * @param onInviteClick 상단 `+` → 초대 모달 연결 지점
+ * @param onHomeClick  오른쪽 위 집 버튼 → 메인(방 만들기). null 이면 버튼 숨김
  */
 @Composable
 fun TimelineScreen(
@@ -77,6 +78,7 @@ fun TimelineScreen(
     markers: List<TimeMarker> = FakeBlocks.markers,
     now: LocalTime? = null,
     onInviteClick: () -> Unit = {},
+    onHomeClick: (() -> Unit)? = null,
 ) {
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
@@ -102,6 +104,7 @@ fun TimelineScreen(
         onMove = vm::move,
         onSeed = vm::seedFakeData,
         onInviteClick = onInviteClick,
+        onHomeClick = onHomeClick,
     )
 }
 
@@ -126,6 +129,7 @@ internal fun TimelineContent(
     onMove: (blockId: String, requestedStartMinutes: Int, window: IntRange) -> EditResult,
     onSeed: () -> Unit,
     onInviteClick: () -> Unit,
+    onHomeClick: (() -> Unit)? = null,
 ) {
     val list = blocks.orEmpty()
     val dates = remember(tripStart, tripEnd) { tripDates(tripStart, tripEnd) }
@@ -141,7 +145,7 @@ internal fun TimelineContent(
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick)
+            MemberBar(members, onInviteClick, onHomeClick)
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
 
@@ -251,26 +255,16 @@ internal fun TimelineContent(
 
 /* ───────────────────────── 상단: 동행자 바 ───────────────────────── */
 
+/** 맨 위: [+](프로필 사진들) ………… ⌂ 메인으로 (onHomeClick 이 null 이면 집 버튼 숨김) */
 @Composable
-private fun MemberBar(members: List<Member>, onInviteClick: () -> Unit) {
+private fun MemberBar(members: List<Member>, onInviteClick: () -> Unit, onHomeClick: (() -> Unit)?) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Circle(onClick = onInviteClick) { Text("+", fontSize = 24.sp, color = TimelineColors.SubText) }
-        members.forEach { m -> Circle { Text(m.nickname.take(1), fontWeight = FontWeight.Bold) } }
+        MemberRow(members, onInviteClick, Modifier.weight(1f))
+        if (onHomeClick != null) HomeButton(onHomeClick)
     }
-}
-
-@Composable
-private fun Circle(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    Box(
-        Modifier.size(44.dp).clip(CircleShape)
-            .border(1.dp, TimelineColors.Border, CircleShape)
-            .background(Color(0xFFF7F7F7))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) { content() }
 }
 
 /* ───────────────────────── 날짜 탭 (1일차, 2일차 …) ───────────────────────── */
@@ -364,5 +358,6 @@ private fun TimelinePreview() {
         onMove = { _, _, _ -> EditResult.Ok(FakeBlocks.blocks) },
         onSeed = {},
         onInviteClick = {},
+        onHomeClick = {},
     )
 }
