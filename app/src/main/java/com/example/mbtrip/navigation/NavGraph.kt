@@ -14,6 +14,7 @@ import com.example.mbtrip.ui.component.TripExampleScreen
 import com.example.mbtrip.ui.screen.LandingScreen
 import com.example.mbtrip.ui.screens.LoginScreen
 import com.example.mbtrip.diagnosis.DiagnosisScreen
+import com.example.mbtrip.timeline.ui.TimelineScreen
 
 // 화면 라우트(경로) 정의
 sealed class Screen(val route: String) {
@@ -22,6 +23,7 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object CreateTrip : Screen("create_trip")
     object Diagnosis : Screen("diagnosis")
+    object Timeline : Screen("timeline")
 }
 
 @Composable
@@ -42,7 +44,8 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
             PlaceholderScreen(
                 title = "초대 화면",
                 onNext = { navController.popBackStack() },
-                onDiagnosis = { navController.navigate(Screen.Diagnosis.route) }
+                onDiagnosis = { navController.navigate(Screen.Diagnosis.route) },
+                onTimeline = { navController.navigate(Screen.Timeline.route) }
             )
         }
         // 랜딩화면
@@ -57,6 +60,10 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
         composable(Screen.Diagnosis.route) {
             DiagnosisScreen(onContinue = { navController.popBackStack() })
         }
+        // 일정표 (지소은)
+        composable(Screen.Timeline.route) {
+            TimelineScreen()
+        }
     }
 }
 
@@ -64,7 +71,8 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
 fun PlaceholderScreen(
     title: String,
     onNext: () -> Unit,
-    onDiagnosis: (() -> Unit)? = null
+    onDiagnosis: (() -> Unit)? = null,
+    onTimeline: (() -> Unit)? = null
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -80,6 +88,12 @@ fun PlaceholderScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedButton(onClick = onDiagnosis) {
                     Text("진단 화면 미리보기")
+                }
+            }
+            if (onTimeline != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(onClick = onTimeline) {
+                    Text("일정표 화면 미리보기")
                 }
             }
         }
