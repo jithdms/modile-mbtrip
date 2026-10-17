@@ -112,5 +112,5 @@ data class Member(
     val userId: String,
     val nickname: String,
     val handle: String,
-    val jpScore: Int, // 0(P) ~ 100(J)
+    val jpScore: Int, // 0(J) ~ 100(P), Firestore Member convention
 )

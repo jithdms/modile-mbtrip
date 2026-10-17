@@ -47,8 +47,8 @@ object FakeBlocks {
     )
 
     val members = listOf(
-        Member("u_minji", "민지", "@minji_j", jpScore = 82),
-        Member("u_junho", "준호", "@junho_p", jpScore = 28),
+        Member("u_minji", "민지", "@minji_j", jpScore = 18),
+        Member("u_junho", "준호", "@junho_p", jpScore = 72),
         Member("u_seoyeon", "서연", "@seoyeon", jpScore = 55), // 와이어프레임 아바타 3개에 맞춘 가상 인물
     )
 
