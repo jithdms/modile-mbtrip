@@ -167,11 +167,12 @@ object TravelDiagnosis {
 
         val scores = companions.map(CompanionMember::jPercent) + selfJPercent
         val spread = (scores.maxOrNull() ?: selfJPercent) - (scores.minOrNull() ?: selfJPercent)
+        val ratio = ItineraryAllocator.ratioFor(scores.map { 100 - it })
         val guidance = when {
             spread <= 15 -> "성향 차이가 크지 않아요. 각자 편한 방식으로 일정을 정해도 좋아요."
             spread <= 35 -> "계획을 정할 부분과 현지에서 정할 부분을 나눠 합의해보세요."
             else -> "일정 운영 방식 차이가 클 수 있어요. 예약과 자유시간의 기준을 미리 맞춰보세요."
         }
-        return "동행자와의 J 성향 차이는 최대 ${spread}%p예요. $guidance"
+        return "동행자와의 J 성향 차이는 최대 ${spread}%p예요. 추천 일정 비율은 확정 ${ratio.fixedPercent}% · 자유 ${ratio.freePercent}%예요. $guidance"
     }
 }
