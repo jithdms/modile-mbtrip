@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "393898239578",
+    "project_id": "mbtrip-590d1",
+    "storage_bucket": "mbtrip-590d1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:393898239578:android:d17a2b0e34d5e03d721a63",
+        "android_client_info": {
+          "package_name": "com.example.mbtrip"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC42XocGfp3Cd4b2kGXs9Gj7uuSi2bhby4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
