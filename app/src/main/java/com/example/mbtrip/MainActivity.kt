@@ -8,42 +8,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import com.example.mbtrip.createtrip.TripFlowPreview
 import com.example.mbtrip.ui.theme.MBTripTheme
-import com.example.mbtrip.navigation.MBTripNavGraph
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MBTripTheme {
+            // 일정표 색이 흰 배경 기준이라 라이트 모드로 고정
+            MBTripTheme(darkTheme = false, dynamicColor = false) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // innerPadding 값을 modifier를 통해 내비게이션 영역에 적용해 줍니다.
-                    Box(modifier = Modifier.padding(innerPadding)) {
-                        MBTripNavGraph()
+                    Box(Modifier.padding(innerPadding)) {
+                        // 숙소·교통 → 저장하기 → 일정표 (soeun 확인용)
+                        TripFlowPreview()
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    MBTripTheme {
-        Greeting("Android")
     }
 }
