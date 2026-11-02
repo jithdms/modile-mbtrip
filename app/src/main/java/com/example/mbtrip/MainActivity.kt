@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import com.example.mbtrip.createtrip.TripFlowPreview
+import com.example.mbtrip.navigation.MBTripNavGraph
 import com.example.mbtrip.ui.theme.MBTripTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,8 +21,8 @@ class MainActivity : ComponentActivity() {
             MBTripTheme(darkTheme = false, dynamicColor = false) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(Modifier.padding(innerPadding)) {
-                        // 숙소·교통 → 저장하기 → 일정표 (soeun 확인용)
-                        TripFlowPreview()
+                        // 앱 전체 화면 흐름 (시작 화면은 NavGraph.kt 의 SHOW_DEV_MENU 로 결정)
+                        MBTripNavGraph()
                     }
                 }
             }
