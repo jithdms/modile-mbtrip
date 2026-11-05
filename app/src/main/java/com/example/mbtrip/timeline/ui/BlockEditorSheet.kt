@@ -9,7 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -141,6 +144,25 @@ internal fun BlockEditorSheet(
         searchMessage = null
     }
 
+    var mapFull by remember { mutableStateOf(false) }
+
+    // 지도를 눌렀을 때 (작은 지도·전체 지도 공용): 핀 옮기고 그 위치 주소 채우기
+    val pickAt: (Double, Double) -> Unit = { la, ln ->
+        draft = draft.copy(lat = la, lng = ln, address = null)
+        searchMessage = null
+        results = emptyList()
+        scope.launch {
+            val addr = vworldAddress(la, ln) ?: reverseGeocode(context, la, ln)
+            // 그 사이 다른 곳을 또 눌렀으면 무시
+            if (draft.lat == la && draft.lng == ln) {
+                draft = draft.copy(
+                    address = addr,
+                    place = if (draft.place.isNullOrBlank()) addr else draft.place,
+                )
+            }
+        }
+    }
+
     // 같은 날, 이 일정보다 먼저 끝나는 일정 중 위치가 있는 가장 가까운 것
     val prev = remember(draft.date, draft.start, draft.id, allBlocks) {
         allBlocks
@@ -188,34 +210,34 @@ internal fun BlockEditorSheet(
                     TagPicker(draft.tags, editable) { draft = draft.copy(tags = it) }
 
                     // 2) 지도
-                    PlaceMap(
-                        lat = draft.lat,
-                        lng = draft.lng,
-                        enabled = editable,
-                        onPick = { la, ln ->
-                            draft = draft.copy(lat = la, lng = ln, address = null)
-                            searchMessage = null
-                            results = emptyList()
-                            scope.launch {
-                                val addr = vworldAddress(la, ln) ?: reverseGeocode(context, la, ln)
-                                // 그 사이 다른 곳을 또 눌렀으면 무시
-                                if (draft.lat == la && draft.lng == ln) {
-                                    draft = draft.copy(
-                                        address = addr,
-                                        place = if (draft.place.isNullOrBlank()) addr else draft.place,
-                                    )
-                                }
-                            }
-                        },
-                        onOutside = { searchMessage = "시흥 안의 장소만 고를 수 있어요." },
-                        prevLat = prev?.lat,
-                        prevLng = prev?.lng,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, FieldBorder, RoundedCornerShape(12.dp)),
-                    )
+                    Box(Modifier.fillMaxWidth().height(150.dp)) {
+                        PlaceMap(
+                            lat = draft.lat,
+                            lng = draft.lng,
+                            enabled = editable,
+                            onPick = pickAt,
+                            onOutside = { searchMessage = "시흥 안의 장소만 고를 수 있어요." },
+                            prevLat = prev?.lat,
+                            prevLng = prev?.lng,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, FieldBorder, RoundedCornerShape(12.dp)),
+                        )
+                        // 전체 보기: 아이콘만
+                        Text(
+                            "⤢",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Black,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { mapFull = true }
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
                     Text(
                         if (draft.hasLocation) "지도를 누르면 핀을 옮길 수 있어요." else "파란 테두리(시흥) 안의 장소를 검색하거나, 지도를 눌러 위치를 찍어주세요.",
                         fontSize = 11.sp, color = TimelineColors.SubText,
@@ -325,6 +347,19 @@ internal fun BlockEditorSheet(
                 }
             }
         }
+    }
+
+    if (mapFull) {
+        FullMapDialog(
+            draft = draft,
+            prev = prev,
+            editable = editable,
+            message = searchMessage,
+            onPick = pickAt,
+            onOutside = { searchMessage = "시흥 안의 장소만 고를 수 있어요." },
+            onChoose = { choose(it) },
+            onClose = { mapFull = false },
+        )
     }
 
     if (pickingTime) {
@@ -483,6 +518,193 @@ private fun PlaceField(
         colors = fieldColors(),
         modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
     )
+}
+
+/** 지도 위 작은 버튼 (전체 보기 · 닫기) */
+@Composable
+private fun MapCornerButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Text(
+        text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        color = Black,
+        modifier = modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.95f))
+            .border(1.dp, FieldBorder, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+/**
+ * 지도 전체 화면. 작은 지도와 같은 핀·이전 일정·시흥 테두리를 크게 보여준다.
+ * 여기서 눌러 핀을 옮겨도 모달에 그대로 반영된다.
+ */
+@Composable
+private fun FullMapDialog(
+    draft: Block,
+    prev: Block?,
+    editable: Boolean,
+    message: String?,
+    onPick: (Double, Double) -> Unit,
+    onOutside: () -> Unit,
+    onChoose: (PlaceResult) -> Unit,
+    onClose: () -> Unit,
+) {
+    val context = LocalContext.current
+    val focus = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf(draft.place.orEmpty()) }
+    var results by remember { mutableStateOf<List<PlaceResult>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+
+    fun search() {
+        val q = query.trim()
+        focus.clearFocus()
+        if (q.isEmpty()) {
+            note = "장소 이름을 먼저 적어주세요."
+            return
+        }
+        scope.launch {
+            searching = true
+            note = null
+            results = vworldSearch(q)
+            if (results.isEmpty()) {
+                // 브이월드에서 못 찾으면 안드로이드 기본 검색으로 한 번 더
+                val hit = searchPlace(context, q)
+                if (hit != null) {
+                    onChoose(PlaceResult(q, "", null, hit.lat, hit.lng))
+                } else {
+                    note = "시흥 안에서 '${q}'을(를) 찾지 못했어요."
+                }
+            }
+            searching = false
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.White)) {
+            PlaceMap(
+                lat = draft.lat,
+                lng = draft.lng,
+                enabled = editable,
+                onPick = onPick,
+                onOutside = onOutside,
+                prevLat = prev?.lat,
+                prevLng = prev?.lng,
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            // 위: 왼쪽 검색창 · 오른쪽 닫기 · 그 아래 검색 결과
+            Column(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(12.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it; note = null },
+                        enabled = editable,
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp),
+                        placeholder = { Text("가게·장소 검색", fontSize = 14.sp) },
+                        trailingIcon = {
+                            Text(
+                                if (searching) "찾는 중" else "검색",
+                                fontSize = 13.sp,
+                                color = if (editable && !searching) Black else TimelineColors.Axis,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(enabled = editable && !searching) { search() }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { search() }),
+                        shape = RoundedCornerShape(50),
+                        colors = fieldColors(),
+                        modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    MapCornerButton("✕", onClick = onClose)
+                }
+                if (results.isNotEmpty()) {
+                    SearchResults(
+                        results,
+                        onChoose = { r ->
+                            onChoose(r)
+                            query = r.name
+                            results = emptyList()
+                        },
+                        onClose = { results = emptyList() },
+                    )
+                }
+                note?.let {
+                    Text(
+                        it, fontSize = 12.sp, color = TimelineColors.Error,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+
+            // 아래: 지금 고른 장소 카드
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(12.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    draft.place?.takeIf { it.isNotBlank() } ?: if (draft.hasLocation) "고른 위치" else "아직 위치를 안 골랐어요",
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                )
+                draft.address?.takeIf { it.isNotBlank() }?.let { AddressLine(it) }
+                if (prev != null && draft.lat != null && draft.lng != null) {
+                    val m = distanceMeters(prev.lat!!, prev.lng!!, draft.lat, draft.lng)
+                    Text(
+                        "이전 일정 ${prev.displayTitle}에서 직선 ${formatDistance(m)} · 도보 약 ${walkMinutes(m)}분",
+                        fontSize = 12.sp, color = TimelineColors.SubText,
+                    )
+                }
+                Text(
+                    message ?: if (editable) "검색하거나 지도를 눌러 위치를 고르세요." else "잠긴 블록이라 위치를 바꿀 수 없어요.",
+                    fontSize = 11.sp,
+                    color = if (message != null) TimelineColors.Error else TimelineColors.Axis,
+                )
+
+                // 결정 → 모달로 돌아가기 (고른 장소는 이미 모달에 들어가 있음)
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .clip(RoundedCornerShape(23.dp))
+                        .background(if (draft.hasLocation) Black else Color(0xFFD6D6D6))
+                        .clickable(enabled = draft.hasLocation, onClick = onClose),
+                    contentAlignment = Alignment.Center,
+                ) { Text("이 위치로 결정", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+            }
+        }
+    }
 }
 
 /** 검색 결과 목록 — 누르면 그 장소로 */

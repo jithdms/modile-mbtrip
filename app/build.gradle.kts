@@ -11,7 +11,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
 }
-
 android {
     namespace = "com.example.mbtrip"
     compileSdk {
@@ -71,7 +70,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
-
+    implementation(libs.androidx.navigation.compose)
     // 일정 모달 지도 (OpenStreetMap · API 키 필요 없음)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
 }

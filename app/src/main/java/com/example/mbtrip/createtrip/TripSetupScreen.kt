@@ -69,7 +69,8 @@ private val ErrorRed = Color(0xFFD32F2F)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripSetupScreen(
-    members: List<Member> = FakeBlocks.members,
+    /** null 이면 동행자 저장소에서 직접 읽는다 (초대·내보내기가 바로 보임) */
+    members: List<Member>? = null,
     tripStart: LocalDate? = null,
     tripEnd: LocalDate? = null,
     initial: TripSetup = TripSetupStore.current

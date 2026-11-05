@@ -66,7 +66,7 @@ private data class EditorState(val block: Block, val isNew: Boolean)
  * @param markers      체크인·체크아웃 시각 (파란 선)
  * @param now          현재 시각 표시선 위치 (빨간 선). null 이면 표시하지 않음
  * @param memberRepository 동행자 저장소 (상단 프로필 줄 + 친구 초대 모달)
- * @param onInviteClick 상단 `+` 를 직접 처리하고 싶을 때만. null 이면 기본 친구 초대 모달이 뜬다
+ * @param onInviteClick 상단 `+` 를 눌렀을 때 추가로 할 일. 친구 초대 모달은 이것과 상관없이 항상 뜬다
  * @param onHomeClick  오른쪽 위 집 버튼 → 메인(방 만들기). null 이면 버튼 숨김
  */
 @Composable
@@ -84,7 +84,6 @@ fun TimelineScreen(
 ) {
     val members by remember(memberRepository, tripId) { memberRepository.observeMembers(tripId) }
         .collectAsState(initial = emptyList())
-    var inviting by remember { mutableStateOf(false) }
     val screenScope = rememberCoroutineScope()
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
@@ -109,8 +108,12 @@ fun TimelineScreen(
         onDelete = vm::delete,
         onMove = vm::move,
         onSeed = vm::seedFakeData,
-        onInviteClick = onInviteClick ?: { inviting = true },
+        onInviteClick = onInviteClick ?: {},
         onHomeClick = onHomeClick,
+        onInvited = { added ->
+            screenScope.launch { snackbar.showSnackbar(added.joinToString(", ") { it.nickname } + " 님을 초대했어요.") }
+        },
+        memberRepository = memberRepository,
         onRemoveMember = { m ->
             screenScope.launch {
                 runCatching { memberRepository.remove(tripId, m.userId) }
@@ -120,20 +123,6 @@ fun TimelineScreen(
         },
     )
 
-    if (inviting) {
-        InviteDialog(
-            tripId = tripId,
-            currentMembers = members,
-            repository = memberRepository,
-            onDismiss = { inviting = false },
-            onInvited = { added ->
-                inviting = false
-                screenScope.launch {
-                    snackbar.showSnackbar(added.joinToString(", ") { it.nickname } + " 님을 초대했어요.")
-                }
-            },
-        )
-    }
 }
 
 /**
@@ -159,6 +148,8 @@ internal fun TimelineContent(
     onInviteClick: () -> Unit,
     onHomeClick: (() -> Unit)? = null,
     onRemoveMember: ((Member) -> Unit)? = null,
+    memberRepository: MemberRepository = TimelineDependencies.memberRepository,
+    onInvited: ((List<Member>) -> Unit)? = null,
 ) {
     val list = blocks.orEmpty()
     val dates = remember(tripStart, tripEnd) { tripDates(tripStart, tripEnd) }
@@ -174,7 +165,7 @@ internal fun TimelineContent(
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick, onHomeClick, onRemoveMember)
+            MemberBar(members, onInviteClick, onHomeClick, onRemoveMember, tripId, memberRepository, onInvited)
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
 
@@ -291,12 +282,21 @@ private fun MemberBar(
     onInviteClick: () -> Unit,
     onHomeClick: (() -> Unit)?,
     onRemoveMember: ((Member) -> Unit)?,
+    tripId: String,
+    memberRepository: MemberRepository,
+    onInvited: ((List<Member>) -> Unit)?,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MemberRow(members, onInviteClick, Modifier.weight(1f), onRemoveMember = onRemoveMember)
+        MemberRow(
+            members, onInviteClick, Modifier.weight(1f),
+            onRemoveMember = onRemoveMember,
+            tripId = tripId,
+            memberRepository = memberRepository,
+            onInvited = onInvited,
+        )
         if (onHomeClick != null) HomeButton(onHomeClick)
     }
 }
