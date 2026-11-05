@@ -1,5 +1,6 @@
 package com.example.mbtrip.timeline.ui
 
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -134,6 +136,10 @@ internal fun DayTimelineGrid(
     onBlockClick: (Block) -> Unit,
     onBlockMoved: (block: Block, requestedStartMinutes: Int, window: IntRange) -> Unit,
     modifier: Modifier = Modifier,
+    /** 밖에서 스크롤 위치를 알고 싶을 때 (맨 위 프로필 크기 조절용) */
+    scrollState: ScrollState = rememberScrollState(),
+    /** 카드 안 할 일 동그라미를 눌렀을 때 (블록, 원문 줄 번호). null 이면 체크 못 함 */
+    onToggleTodo: ((Block, Int) -> Unit)? = null,
 ) {
     val window = remember(dayBlocks, markers) { dayWindowHours(dayBlocks, markers.map { it.time.toMinutes() }) }
     val hours = window.last - window.first
@@ -145,7 +151,7 @@ internal fun DayTimelineGrid(
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragDy by remember { mutableFloatStateOf(0f) }
 
-    Box(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Box(modifier.fillMaxSize().verticalScroll(scrollState)) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -208,6 +214,7 @@ internal fun DayTimelineGrid(
                     BlockCard(
                         block = block,
                         previewStart = previewStart,
+                        onToggleTodo = onToggleTodo?.let { f -> { line: Int -> f(block, line) } },
                         modifier = Modifier
                             .zIndex(if (isDragging) 3f else 0f)
                             .padding(start = AXIS_WIDTH + 8.dp, end = 12.dp)
@@ -309,9 +316,15 @@ private fun ArrowIcon(pointRight: Boolean, color: Color, size: Dp = 12.dp) {
  *  - 40dp 미만 (약 30분 이하): 한 줄 — 제목 + 시간
  *  - 40~66dp (약 40분)      : 시간·라벨 / 제목 + 태그
  *  - 66dp 이상 (약 50분 이상): 시간·라벨 / 제목 / 장소·할 일 + 오른쪽 아래 태그
+ *    + 확정 블록이면 남는 높이만큼 할 일 체크리스트 (동그라미를 눌러 바로 체크)
  */
 @Composable
-private fun BlockCard(block: Block, previewStart: Int?, modifier: Modifier = Modifier) {
+private fun BlockCard(
+    block: Block,
+    previewStart: Int?,
+    modifier: Modifier = Modifier,
+    onToggleTodo: ((Int) -> Unit)? = null,
+) {
     val style = block.cardStyle()
     val shape = RoundedCornerShape(10.dp)
     val timeLabel = previewStart?.let {
@@ -328,6 +341,7 @@ private fun BlockCard(block: Block, previewStart: Int?, modifier: Modifier = Mod
             .padding(horizontal = 10.dp, vertical = 3.dp),
     ) {
         val sub = style.fg.copy(alpha = 0.7f)
+        val cardHeight = maxHeight // 안쪽 Column 에서는 maxHeight 를 바로 못 써서 미리 꺼내 둔다
         when {
             maxHeight < 40.dp -> Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -367,6 +381,33 @@ private fun BlockCard(block: Block, previewStart: Int?, modifier: Modifier = Mod
                         ).joinToString(" · ")
                         if (extra.isNotEmpty()) {
                             Text(extra, color = sub, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        // 남는 높이에 할 일 체크리스트 (한 줄 22dp, 위 3줄 ≈ 50dp)
+                        val checks = remember(block.todo) { parseMarkdown(block.todo).filterIsInstance<MdLine.Check>() }
+                        val fit = ((cardHeight - 54.dp) / 22.dp).toInt().coerceAtLeast(0)
+                        if (checks.isNotEmpty() && fit > 0) {
+                            val shown = if (checks.size > fit) checks.take((fit - 1).coerceAtLeast(1)) else checks
+                            Spacer(Modifier.height(2.dp))
+                            shown.forEach { c ->
+                                Row(Modifier.height(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CheckCircle(
+                                        checked = c.checked,
+                                        enabled = onToggleTodo != null && !block.locked,
+                                        size = 16.dp,
+                                    ) { onToggleTodo?.invoke(c.lineIndex) }
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        c.text.replace("**", ""),
+                                        fontSize = 12.sp,
+                                        color = if (c.checked) sub else style.fg,
+                                        textDecoration = if (c.checked) TextDecoration.LineThrough else TextDecoration.None,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            if (shown.size < checks.size) {
+                                Text("외 ${checks.size - shown.size}개", fontSize = 10.sp, color = sub)
+                            }
                         }
                     }
                 }

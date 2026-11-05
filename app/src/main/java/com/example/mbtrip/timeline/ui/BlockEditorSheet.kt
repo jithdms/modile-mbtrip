@@ -1,5 +1,10 @@
 package com.example.mbtrip.timeline.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -64,7 +69,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 
-private val TAG_OPTIONS = listOf("맛집", "명소", "카페")
+private val TAG_OPTIONS = listOf("맛집", "카페", "명소", "액티비티", "쇼핑")
 
 /* 와이어프레임 '방 생성 페이지2' 모달 색 */
 private val ModalBg = Color(0xFFF4F4F4)
@@ -163,6 +168,14 @@ internal fun BlockEditorSheet(
         }
     }
 
+    // 이미 일정에 넣은 다른 장소들 (지도에 이름표로)
+    val spots = remember(allBlocks, draft.id) {
+        allBlocks
+            .filter { it.id != draft.id && it.hasLocation }
+            .sortedWith(compareBy({ it.date }, { it.start }))
+            .map { MapSpot(it.lat!!, it.lng!!, "${it.date.monthValue}/${it.date.dayOfMonth} ${it.displayTitle}") }
+    }
+
     // 같은 날, 이 일정보다 먼저 끝나는 일정 중 위치가 있는 가장 가까운 것
     val prev = remember(draft.date, draft.start, draft.id, allBlocks) {
         allBlocks
@@ -219,6 +232,7 @@ internal fun BlockEditorSheet(
                             onOutside = { searchMessage = "시흥 안의 장소만 고를 수 있어요." },
                             prevLat = prev?.lat,
                             prevLng = prev?.lng,
+                            spots = spots,
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(RoundedCornerShape(12.dp))
@@ -359,6 +373,7 @@ internal fun BlockEditorSheet(
             onOutside = { searchMessage = "시흥 안의 장소만 고를 수 있어요." },
             onChoose = { choose(it) },
             onClose = { mapFull = false },
+            spots = spots,
         )
     }
 
@@ -502,15 +517,16 @@ private fun PlaceField(
         textStyle = TextStyle(fontSize = 16.sp, textAlign = TextAlign.Center),
         placeholder = { Text("예) 오이도 빨간등대", fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
         trailingIcon = {
-            Text(
-                if (searching) "찾는 중" else "검색",
-                fontSize = 13.sp,
-                color = if (enabled && !searching) Black else TimelineColors.Axis,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(enabled = enabled && !searching, onClick = onSearch)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
+            // 돋보기 아이콘 (찾는 중엔 회색)
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = enabled && !searching, onClick = onSearch),
+                contentAlignment = Alignment.Center,
+            ) {
+                SearchIcon(if (enabled && !searching) Black else TimelineColors.Axis)
+            }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
@@ -518,6 +534,25 @@ private fun PlaceField(
         colors = fieldColors(),
         modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
     )
+}
+
+/** 돋보기 아이콘 (아이콘 라이브러리 없이 직접 그림) */
+@Composable
+private fun SearchIcon(color: Color, size: Dp = 20.dp) {
+    Canvas(Modifier.size(size)) {
+        val stroke = 2.2.dp.toPx()
+        val r = this.size.minDimension * 0.32f
+        val c = Offset(this.size.width * 0.42f, this.size.height * 0.42f)
+        drawCircle(color, radius = r, center = c, style = Stroke(width = stroke))
+        val k = 0.7071f
+        drawLine(
+            color,
+            start = Offset(c.x + r * k, c.y + r * k),
+            end = Offset(this.size.width * 0.9f, this.size.height * 0.9f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
 }
 
 /** 지도 위 작은 버튼 (전체 보기 · 닫기) */
@@ -552,6 +587,7 @@ private fun FullMapDialog(
     onOutside: () -> Unit,
     onChoose: (PlaceResult) -> Unit,
     onClose: () -> Unit,
+    spots: List<MapSpot> = emptyList(),
 ) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -598,6 +634,7 @@ private fun FullMapDialog(
                 onOutside = onOutside,
                 prevLat = prev?.lat,
                 prevLng = prev?.lng,
+                spots = spots,
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -619,15 +656,16 @@ private fun FullMapDialog(
                         textStyle = TextStyle(fontSize = 15.sp),
                         placeholder = { Text("가게·장소 검색", fontSize = 14.sp) },
                         trailingIcon = {
-                            Text(
-                                if (searching) "찾는 중" else "검색",
-                                fontSize = 13.sp,
-                                color = if (editable && !searching) Black else TimelineColors.Axis,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable(enabled = editable && !searching) { search() }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                            )
+                            // 돋보기 아이콘 (찾는 중엔 회색)
+                            Box(
+                                Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .clickable(enabled = editable && !searching) { search() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                SearchIcon(if (editable && !searching) Black else TimelineColors.Axis)
+                            }
                         },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { search() }),
@@ -888,24 +926,29 @@ private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit)
 /** 와이어프레임: #맛집 #명소 — 고른 건 초록 */
 @Composable
 private fun TagPicker(tags: List<String>, enabled: Boolean, onChange: (List<String>) -> Unit) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+    // 5개를 한 줄에: 칸을 똑같이 나누고 글자를 조금 작게
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TAG_OPTIONS.forEach { t ->
             val on = t in tags
             val shape = RoundedCornerShape(50)
-            Text(
-                "#$t",
-                fontSize = 14.sp,
-                color = if (enabled) Color.Black else TimelineColors.SubText,
-                modifier = Modifier
+            Box(
+                Modifier
+                    .weight(1f)
                     .clip(shape)
                     .background(if (on) TagOn else Color.White)
                     .border(1.dp, if (on) TagOnBorder else FieldBorder, shape)
                     .clickable(enabled = enabled) { onChange(if (on) tags - t else tags + t) }
-                    .padding(horizontal = 16.dp, vertical = 5.dp),
-            )
+                    .padding(vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "#$t",
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    color = if (enabled) Color.Black else TimelineColors.SubText,
+                )
+            }
         }
     }
 }

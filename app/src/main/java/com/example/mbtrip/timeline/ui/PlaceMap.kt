@@ -4,6 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Address
 import android.location.Geocoder
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -38,7 +44,6 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
-import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
@@ -91,9 +96,11 @@ internal fun PlaceMap(
     onPick: (lat: Double, lng: Double) -> Unit,
     modifier: Modifier = Modifier,
     onOutside: () -> Unit = {},
-    /** 바로 전 일정의 위치 — 있으면 회색 점 + 점선으로 이어서 보여준다 */
+    /** 바로 전 일정의 위치 — 있으면 지금 핀까지 점선으로 잇는다 */
     prevLat: Double? = null,
     prevLng: Double? = null,
+    /** 이미 일정에 넣은 다른 장소들 — 파란 점 + 이름표로 보여준다 */
+    spots: List<MapSpot> = emptyList(),
 ) {
     // Android Studio 미리보기에서는 지도 대신 회색 상자
     if (LocalInspectionMode.current) {
@@ -164,8 +171,6 @@ internal fun PlaceMap(
                     setOnClickListener { _, _, _ -> false }
                 },
             )
-            // 출처 표시 (지도 이용 조건)
-            overlays.add(CopyrightOverlay(context))
             // 3) 탭 받기 (맨 위에 둬서 폴리곤이 탭을 먹지 않게)
             overlays.add(
                 MapEventsOverlay(object : MapEventsReceiver {
@@ -194,20 +199,8 @@ internal fun PlaceMap(
     }
     var firstApply by remember { mutableStateOf(true) }
 
-    // 이전 일정: 회색 동그라미 + 점선
+    // 이전 일정 → 지금 핀 점선 (이전 일정 위치 자체는 spots 이름표로 보인다)
     val density = context.resources.displayMetrics.density
-    val prevMarker = remember {
-        Marker(mapView).apply {
-            icon = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(android.graphics.Color.rgb(0x75, 0x75, 0x75))
-                setStroke((2 * density).toInt(), android.graphics.Color.WHITE)
-                setSize((14 * density).toInt(), (14 * density).toInt())
-            }
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-            setOnMarkerClickListener { _, _ -> true }
-        }
-    }
     val prevLine = remember {
         Polyline(mapView).apply {
             outlinePaint.color = android.graphics.Color.rgb(0x75, 0x75, 0x75)
@@ -255,23 +248,87 @@ internal fun PlaceMap(
     }
 
     LaunchedEffect(prevLat, prevLng, lat, lng) {
-        mapView.overlays.remove(prevMarker)
         mapView.overlays.remove(prevLine)
         if (prevLat != null && prevLng != null) {
             val prev = GeoPoint(prevLat, prevLng)
-            prevMarker.position = prev
             // 탭 받는 MapEventsOverlay 보다 아래에 깐다
             val below = mapView.overlays.indexOfFirst { it is MapEventsOverlay }.let { if (it < 0) mapView.overlays.size else it }
             if (lat != null && lng != null) {
                 prevLine.setPoints(listOf(prev, GeoPoint(lat, lng)))
                 mapView.overlays.add(below, prevLine)
             }
-            mapView.overlays.add(below, prevMarker)
+        }
+        mapView.invalidate()
+    }
+
+    // 이미 추가한 장소들
+    val spotMarkers = remember { mutableListOf<Marker>() }
+    LaunchedEffect(spots) {
+        spotMarkers.forEach { mapView.overlays.remove(it) }
+        spotMarkers.clear()
+        val below = mapView.overlays.indexOfFirst { it is MapEventsOverlay }.let { if (it < 0) mapView.overlays.size else it }
+        spots.forEach { spot ->
+            val (icon, anchorX) = spotIcon(context, spot.label)
+            val m = Marker(mapView).apply {
+                position = GeoPoint(spot.lat, spot.lng)
+                this.icon = icon
+                setAnchor(anchorX, 0.5f)
+                setOnMarkerClickListener { _, _ -> true }
+            }
+            spotMarkers += m
+            mapView.overlays.add(below, m)
         }
         mapView.invalidate()
     }
 
     AndroidView(factory = { mapView }, modifier = modifier)
+}
+
+/** 지도에 띄울 '이미 추가한 장소' 하나 */
+internal data class MapSpot(val lat: Double, val lng: Double, val label: String)
+
+/**
+ * ● 이름표  모양 아이콘을 그린다. 반환: (그림, 점 위치의 가로 비율 — setAnchor 용)
+ */
+private fun spotIcon(context: Context, label: String): Pair<BitmapDrawable, Float> {
+    val d = context.resources.displayMetrics.density
+    val text = if (label.length > 14) label.take(14) + "…" else label
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 11 * d
+        color = android.graphics.Color.rgb(0x22, 0x22, 0x22)
+        typeface = Typeface.DEFAULT_BOLD
+    }
+    val dotR = 6 * d
+    val gap = 4 * d
+    val padH = 7 * d
+    val h = 22 * d
+    val tw = textPaint.measureText(text)
+    val pillLeft = dotR * 2 + gap
+    val w = (pillLeft + padH * 2 + tw + 2 * d).toInt()
+
+    val bmp = Bitmap.createBitmap(w, h.toInt(), Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    // 이름표 바탕
+    val pill = RectF(pillLeft, 1 * d, w - 1 * d, h - 1 * d)
+    c.drawRoundRect(pill, h / 2, h / 2, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.argb(0xF0, 0xFF, 0xFF, 0xFF) })
+    c.drawRoundRect(pill, h / 2, h / 2, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1 * d
+        color = android.graphics.Color.rgb(0x5D, 0xAD, 0xE2)
+    })
+    // 점
+    val cx = dotR + 1 * d
+    c.drawCircle(cx, h / 2, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.rgb(0x5D, 0xAD, 0xE2) })
+    c.drawCircle(cx, h / 2, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2 * d
+        color = android.graphics.Color.WHITE
+    })
+    // 글자 (세로 가운데)
+    val baseline = h / 2 - (textPaint.ascent() + textPaint.descent()) / 2
+    c.drawText(text, pillLeft + padH, baseline, textPaint)
+
+    return BitmapDrawable(context.resources, bmp) to (cx / w)
 }
 
 /* ───────── 장소 검색 (Geocoder) ───────── */

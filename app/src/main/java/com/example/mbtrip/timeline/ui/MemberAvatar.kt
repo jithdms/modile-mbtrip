@@ -78,6 +78,8 @@ fun MemberRow(
     tripId: String = FakeBlocks.TRIP_ID,
     memberRepository: MemberRepository = TimelineDependencies.memberRepository,
     onInvited: ((List<Member>) -> Unit)? = null,
+    /** 프로필 사진 크기 — 일정표 맨 위에 있을 땐 크게, 내리면 기본 */
+    avatarSize: Dp = 44.dp,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -91,7 +93,7 @@ fun MemberRow(
     // 초대해서 사람이 많아지면 옆으로 밀어서 보기
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
-            Modifier.size(44.dp).clip(CircleShape)
+            Modifier.size(avatarSize).clip(CircleShape)
                 .border(1.dp, TimelineColors.Border, CircleShape)
                 .background(Color(0xFFF7F7F7))
                 // 다른 화면(친구 목록)으로 넘어가지 않고 이 자리에서 초대 모달만 띄운다
@@ -100,7 +102,7 @@ fun MemberRow(
         ) { Text("+", fontSize = 24.sp, color = TimelineColors.SubText) }
         shown.forEach { m ->
             // 누르면 그 사람 정보 카드
-            MemberAvatar(m, modifier = Modifier.clip(CircleShape).clickable { viewing = m })
+            MemberAvatar(m, size = avatarSize, modifier = Modifier.clip(CircleShape).clickable { viewing = m })
         }
     }
 

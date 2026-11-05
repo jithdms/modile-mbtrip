@@ -1,5 +1,16 @@
 package com.example.mbtrip.timeline.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -40,7 +50,7 @@ internal fun MarkdownView(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFF7F7F7))
+            .background(Color.White)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -56,9 +66,12 @@ internal fun MarkdownView(
                     modifier = Modifier.padding(top = 4.dp),
                 )
                 is MdLine.Check -> {
-                    val handler: ((Boolean) -> Unit)? = if (enabled) { { _ -> onToggle(line.lineIndex) } } else null
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = line.checked, onCheckedChange = handler, modifier = Modifier.size(32.dp))
+                    Row(
+                        Modifier.padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CheckCircle(line.checked, enabled) { onToggle(line.lineIndex) }
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             boldText(line.text),
                             fontSize = 14.sp,
@@ -73,6 +86,37 @@ internal fun MarkdownView(
                 }
                 is MdLine.Paragraph -> Text(boldText(line.text), fontSize = 14.sp)
                 is MdLine.Blank -> Spacer(Modifier.height(6.dp))
+            }
+        }
+    }
+}
+
+/**
+ * 동그란 체크 — 빈 원 / 꽉 찬 원 + 흰 체크 표시.
+ * 일정표 카드와 할 일 미리보기가 같이 쓴다.
+ */
+@Composable
+internal fun CheckCircle(checked: Boolean, enabled: Boolean, size: Dp = 20.dp, onClick: () -> Unit) {
+    val fill = Color(0xFF1E1E1E)
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(if (checked) fill else Color.White)
+            .border(1.5.dp, if (checked) fill else TimelineColors.Border, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Canvas(Modifier.size(size * 0.55f)) {
+                val w = this.size.width
+                val h = this.size.height
+                val p = Path().apply {
+                    moveTo(w * 0.08f, h * 0.52f)
+                    lineTo(w * 0.40f, h * 0.82f)
+                    lineTo(w * 0.94f, h * 0.20f)
+                }
+                drawPath(p, Color.White, style = Stroke(width = w * 0.18f, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
         }
     }
