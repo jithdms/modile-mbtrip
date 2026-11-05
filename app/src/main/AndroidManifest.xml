@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Firebase(Firestore·Auth) 통신 -->
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Firebase를 쓰지 않는다면 인터넷 권한도 필요 없습니다 (필요시 주석 해제) -->
+    <!-- <uses-permission android:name="android.permission.INTERNET" /> -->
 
     <application
         android:allowBackup="true"
