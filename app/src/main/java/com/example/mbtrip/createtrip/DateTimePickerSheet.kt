@@ -58,7 +58,7 @@ private val SunRed = Color(0xFFE53935)
 private val SatBlue = Color(0xFF1E88E5)
 private val TodaySky = Color(0xFFAED6F1) // 일정표 확정 블록 하늘색
 
-private val ItemH = 40.dp // 휠 한 줄 높이 (3줄이 보임)
+internal val ItemH = 40.dp // 휠 한 줄 높이 (3줄이 보임)
 
 /**
  * 날짜·시간 선택 시트: 위 = 달력, 아래 = 시간 휠(오전/오후 · 시 · 분 1분 단위), [완료].
@@ -275,7 +275,7 @@ private fun DayCell(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Wheel(items: List<String>, initialIndex: Int, modifier: Modifier, onSelected: (Int) -> Unit) {
+internal fun Wheel(items: List<String>, initialIndex: Int, modifier: Modifier, onSelected: (Int) -> Unit) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex.coerceIn(0, items.lastIndex))
     val fling = rememberSnapFlingBehavior(lazyListState = state)
     val itemPx = with(LocalDensity.current) { ItemH.toPx() }

@@ -11,6 +11,8 @@ import java.time.LocalTime
  *  - title, tags, memo 추가
  *  - todo 추가        : 확정 블록의 '할 일' (마크다운 글)
  *  - transport 추가   : 이동 블록의 이동수단
+ *  - lat, lng 추가     : 확정 블록 장소의 지도 좌표 (모달 지도에서 찍거나 검색)
+ *  - address 추가      : 그 좌표의 상세 주소 (예: 경기도 시흥시 거북섬둘레길 42)
  *
  * 종류별 규칙 (init 에서 강제):
  *  - 이동(MOVE)  : 항상 확정됨. 시간·이동수단·메모만 사용
@@ -34,6 +36,9 @@ data class Block(
     val memo: String? = null,
     val todo: String = "",
     val transport: Transport? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    val address: String? = null,
 ) {
     init {
         require(start < end) { "Block($id): start($start) 는 end($end) 보다 빨라야 합니다." }
@@ -41,6 +46,9 @@ data class Block(
             "Block($id): 이동·자유 블록은 항상 확정됨 상태여야 합니다."
         }
     }
+
+    /** 지도에 핀을 찍을 수 있는지 */
+    val hasLocation: Boolean get() = lat != null && lng != null
 
     /** 자유 블록인데 메모가 비어 있으면 '빈칸' */
     val isEmptyFree: Boolean get() = kind == BlockKind.FREE && memo.isNullOrBlank()
@@ -115,4 +123,6 @@ data class Member(
     val jpScore: Int, // 0(P) ~ 100(J)
     /** 프로필 사진 주소. null = 사진 등록 안 함 → 기본 사진(고양이) */
     val photoUrl: String? = null,
+    /** 사용자가 직접 적은 한 줄 소개 (프로필 카드에 보임). null/빈칸 = 안 적음 */
+    val bio: String? = null,
 )

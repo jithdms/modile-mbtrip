@@ -2,11 +2,16 @@ package com.example.mbtrip.createtrip
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.example.mbtrip.timeline.data.TimelineDependencies
 import com.example.mbtrip.timeline.fake.FakeBlocks
+import com.example.mbtrip.timeline.ui.InviteDialog
 import com.example.mbtrip.timeline.ui.TimelineScreen
 
 /**
@@ -17,9 +22,27 @@ import com.example.mbtrip.timeline.ui.TimelineScreen
 @Composable
 fun TripFlowPreview() {
     var onTimeline by remember { mutableStateOf(false) }
+    // 숙소·교통 화면 위쪽 `+` 도 같은 친구 초대 모달 (일정표와 같은 동행자 목록을 쓴다)
+    val memberRepo = TimelineDependencies.memberRepository
+    val tripId = FakeBlocks.TRIP_ID
+    val members by remember(memberRepo) { memberRepo.observeMembers(tripId) }.collectAsState(initial = emptyList())
+    var inviting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     if (!onTimeline) {
+        if (inviting) {
+            InviteDialog(
+                tripId = tripId,
+                currentMembers = members,
+                repository = memberRepo,
+                onDismiss = { inviting = false },
+                onInvited = { inviting = false },
+            )
+        }
         TripSetupScreen(
+            members = members,
+            onInviteClick = { inviting = true },
+            onRemoveMember = { m -> scope.launch { memberRepo.remove(tripId, m.userId) } },
             onBack = {}, // 방 만들기(메인)는 다른 팀원 화면 → main 에서 NavGraph 로 연결됨
             onSave = { setup ->
                 TripSetupStore.current = setup

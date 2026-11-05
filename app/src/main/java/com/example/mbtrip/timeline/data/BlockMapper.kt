@@ -33,6 +33,9 @@ object BlockFields {
     const val MEMO = "memo"
     const val TODO = "todo"
     const val TRANSPORT = "transport"
+    const val LAT = "lat"
+    const val LNG = "lng"
+    const val ADDRESS = "address"
     const val UPDATED_AT = "updatedAt" // FirestoreBlockRepository 가 서버 시각으로 채움
 }
 
@@ -52,6 +55,9 @@ fun Block.toFirestoreMap(): Map<String, Any?> = mapOf(
     BlockFields.MEMO to memo,
     BlockFields.TODO to todo,
     BlockFields.TRANSPORT to transport?.name,
+    BlockFields.LAT to lat,
+    BlockFields.LNG to lng,
+    BlockFields.ADDRESS to address,
 )
 
 /**
@@ -76,5 +82,8 @@ fun blockFromFirestore(id: String, tripId: String, data: Map<String, Any?>): Blo
         memo = data[BlockFields.MEMO] as? String,
         todo = data[BlockFields.TODO] as? String ?: "",
         transport = (data[BlockFields.TRANSPORT] as? String)?.let { Transport.valueOf(it) },
+        lat = (data[BlockFields.LAT] as? Number)?.toDouble(),
+        lng = (data[BlockFields.LNG] as? Number)?.toDouble(),
+        address = data[BlockFields.ADDRESS] as? String,
     )
 }.getOrNull()

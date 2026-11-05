@@ -10,52 +10,80 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.mbtrip.timeline.model.Block
 import com.example.mbtrip.timeline.model.BlockKind
+import com.example.mbtrip.timeline.model.BlockSource
 import com.example.mbtrip.timeline.model.BlockStatus
 import com.example.mbtrip.timeline.model.Transport
+import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.LocalTime
 
 private val TAG_OPTIONS = listOf("맛집", "명소", "카페")
 
+/* 와이어프레임 '방 생성 페이지2' 모달 색 */
+private val ModalBg = Color(0xFFF4F4F4)
+private val FieldBorder = Color(0xFF555555)
+private val Black = Color(0xFF1E1E1E)
+private val TagOn = Color(0xFFA9E5A0)       // 선택된 태그 = 자유 블록 초록
+private val TagOnBorder = Color(0xFF4F9A47)
+private val FieldShape = RoundedCornerShape(14.dp)
+
 /**
- * 블록 추가·수정 모달 (블록 한 번 누르기 / + 버튼).
- *  - 확정: 제목, 시간, 장소, 할 일(마크다운), 메모, 태그
- *  - 자유: 시간, 메모만
+ * 블록 추가·수정 모달 (블록 한 번 누르기 / + 버튼) — 화면 가운데 뜨는 카드.
+ *
+ *  - 확정: 태그 → 지도 → 장소 → 시간 → 메모 (+ 더보기: 제목·할 일)   ← 와이어프레임 '방 생성 페이지2'
+ *  - 자유: 시간, 메모
  *  - 이동: 시간, 이동수단, 메모
- *  - 맨 위 [자유 | 확정] 버튼으로 서로 전환 (이동은 전환 불가)
+ *  - 맨 위 [자유 | 확정] 으로 서로 전환 (이동은 전환 불가)
+ *
+ * 장소: 가게·장소 이름을 적고 [검색] → 결과 목록에서 고르면 핀·상세 주소가 채워진다.
+ *       지도를 직접 눌러도 핀이 옮겨지고 그 위치의 상세 주소가 나온다.
+ * 이전 일정: 같은 날 바로 전 일정(위치 있는 것)과의 직선거리·대략 이동 시간을 보여준다.
+ * 제목: 비워두면 장소 이름이 카드 제목이 된다.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BlockEditorSheet(
     original: Block,
@@ -68,61 +96,200 @@ internal fun BlockEditorSheet(
 ) {
     var draft by remember(original.id, isNew) { mutableStateOf(original) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var pickingTime by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(original.title.isNotBlank() && original.title != original.place || original.todo.isNotBlank()) }
+    var searching by remember { mutableStateOf(false) }
+    var searchMessage by remember { mutableStateOf<String?>(null) }
+    var results by remember { mutableStateOf<List<PlaceResult>>(emptyList()) }
+
     val editable = !original.locked
     val problem = remember(draft, allBlocks) { validate(allBlocks, draft) }
+    val context = LocalContext.current
+    val focus = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color.White,
-    ) {
+    fun runSearch() {
+        val query = draft.place.orEmpty().trim()
+        focus.clearFocus()
+        if (query.isEmpty()) {
+            searchMessage = "장소 이름을 먼저 적어주세요."
+            return
+        }
+        scope.launch {
+            searching = true
+            searchMessage = null
+            results = emptyList()
+            val found = vworldSearch(query)
+            if (found.isNotEmpty()) {
+                results = found
+            } else {
+                // 브이월드 검색이 안 되면 안드로이드 기본 검색으로 한 번 더
+                val hit = searchPlace(context, query)
+                if (hit == null) {
+                    searchMessage = "시흥 안에서 '$query'을(를) 찾지 못했어요. 지도를 눌러 직접 찍어주세요."
+                } else {
+                    draft = draft.copy(lat = hit.lat, lng = hit.lng, address = vworldAddress(hit.lat, hit.lng) ?: draft.address)
+                }
+            }
+            searching = false
+        }
+    }
+
+    fun choose(r: PlaceResult) {
+        draft = draft.copy(place = r.name, address = r.address.ifBlank { null }, lat = r.lat, lng = r.lng)
+        results = emptyList()
+        searchMessage = null
+    }
+
+    // 같은 날, 이 일정보다 먼저 끝나는 일정 중 위치가 있는 가장 가까운 것
+    val prev = remember(draft.date, draft.start, draft.id, allBlocks) {
+        allBlocks
+            .filter { it.id != draft.id && it.date == draft.date && it.end <= draft.start && it.hasLocation }
+            .maxByOrNull { it.end }
+    }
+
+    // 장소 이름만 있고 좌표가 없는 블록(예전 데이터)은 열 때 한 번 찾아서 핀을 꽂아준다
+    LaunchedEffect(original.id) {
+        val place = original.place
+        if (original.kind == BlockKind.FIXED && !original.hasLocation && !place.isNullOrBlank()) {
+            val r = vworldSearch(place).firstOrNull()
+            if (r != null && !draft.hasLocation) {
+                draft = draft.copy(lat = r.lat, lng = r.lng, address = draft.address ?: r.address.ifBlank { null })
+            } else {
+                val hit = searchPlace(context, place)
+                if (hit != null && !draft.hasLocation) draft = draft.copy(lat = hit.lat, lng = hit.lng)
+            }
+        } else if (original.hasLocation && original.address.isNullOrBlank()) {
+            // 좌표만 있고 주소가 없으면 채워준다
+            val addr = vworldAddress(original.lat!!, original.lng!!)
+            if (addr != null && draft.address.isNullOrBlank()) draft = draft.copy(address = addr)
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(0.9f)
+                .widthIn(max = 420.dp)
+                .imePadding()
+                .clip(RoundedCornerShape(20.dp))
+                .background(ModalBg)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // 1) 종류
-            if (draft.kind == BlockKind.MOVE) {
-                Text("이동 블록", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            } else {
-                KindToggle(draft.kind, editable) { draft = draft.withKind(it) }
-            }
+            // 0) 종류 전환 + 닫기
+            Header(draft, editable, onKind = { draft = draft.withKind(it) }, onClose = onDismiss)
             StatusHint(original, draft, isNew)
 
-            // 2) 시간
-            TimeEditor(draft, editable) { draft = it }
-
-            // 3) 종류별 항목
             when (draft.kind) {
                 BlockKind.FIXED -> {
-                    LabeledField("제목", draft.title, editable, placeholder = "예) 웨이브파크 서핑") {
-                        draft = draft.copy(title = it)
-                    }
-                    LabeledField("장소", draft.place.orEmpty(), editable, placeholder = "예) 시흥 웨이브파크") {
-                        draft = draft.copy(place = it)
-                    }
-                    TodoEditor(draft.todo, editable) { draft = draft.copy(todo = it) }
+                    // 1) 태그
                     TagPicker(draft.tags, editable) { draft = draft.copy(tags = it) }
-                    LabeledField("메모", draft.memo.orEmpty(), editable, minLines = 2) { draft = draft.copy(memo = it) }
+
+                    // 2) 지도
+                    PlaceMap(
+                        lat = draft.lat,
+                        lng = draft.lng,
+                        enabled = editable,
+                        onPick = { la, ln ->
+                            draft = draft.copy(lat = la, lng = ln, address = null)
+                            searchMessage = null
+                            results = emptyList()
+                            scope.launch {
+                                val addr = vworldAddress(la, ln) ?: reverseGeocode(context, la, ln)
+                                // 그 사이 다른 곳을 또 눌렀으면 무시
+                                if (draft.lat == la && draft.lng == ln) {
+                                    draft = draft.copy(
+                                        address = addr,
+                                        place = if (draft.place.isNullOrBlank()) addr else draft.place,
+                                    )
+                                }
+                            }
+                        },
+                        onOutside = { searchMessage = "시흥 안의 장소만 고를 수 있어요." },
+                        prevLat = prev?.lat,
+                        prevLng = prev?.lng,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, FieldBorder, RoundedCornerShape(12.dp)),
+                    )
+                    Text(
+                        if (draft.hasLocation) "지도를 누르면 핀을 옮길 수 있어요." else "파란 테두리(시흥) 안의 장소를 검색하거나, 지도를 눌러 위치를 찍어주세요.",
+                        fontSize = 11.sp, color = TimelineColors.SubText,
+                    )
+
+                    // 3) 장소
+                    Section("장소") {
+                        PlaceField(
+                            value = draft.place.orEmpty(),
+                            enabled = editable,
+                            searching = searching,
+                            onChange = { draft = draft.copy(place = it); searchMessage = null },
+                            onSearch = { runSearch() },
+                        )
+                        searchMessage?.let { Text(it, fontSize = 12.sp, color = TimelineColors.Error) }
+                        if (results.isNotEmpty()) {
+                            SearchResults(results, onChoose = { choose(it) }, onClose = { results = emptyList() })
+                        }
+                        draft.address?.takeIf { it.isNotBlank() }?.let { AddressLine(it) }
+                    }
+
+                    // 이전 일정과의 거리
+                    val cur = draft
+                    if (prev != null && cur.lat != null && cur.lng != null) {
+                        PrevDistanceCard(prev, cur.lat, cur.lng, cur.start)
+                    }
+
+                    // 4) 시간
+                    Section("시간") { TimeField(draft, editable) { pickingTime = true } }
+
+                    // 5) 메모
+                    Section("메모") {
+                        BoxField(draft.memo.orEmpty(), editable, minLines = 3, placeholder = "예) 밥 먹기") {
+                            draft = draft.copy(memo = it)
+                        }
+                    }
+
+                    // 6) 더보기: 제목 · 할 일
+                    Text(
+                        if (showMore) "제목·할 일 접기 ▴" else "제목·할 일 더보기 ▾",
+                        fontSize = 13.sp, color = TimelineColors.SubText,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { showMore = !showMore }.padding(4.dp),
+                    )
+                    if (showMore) {
+                        Section("제목") {
+                            BoxField(draft.title, editable, placeholder = "비워두면 장소 이름으로 보여요") {
+                                draft = draft.copy(title = it)
+                            }
+                        }
+                        TodoEditor(draft.todo, editable) { draft = draft.copy(todo = it) }
+                    }
                 }
+
                 BlockKind.FREE -> {
-                    LabeledField(
-                        "메모", draft.memo.orEmpty(), editable, minLines = 4,
-                        placeholder = "비워두면 '빈칸'으로 보여요",
-                    ) { draft = draft.copy(memo = it) }
+                    Section("시간") { TimeField(draft, editable) { pickingTime = true } }
+                    Section("메모") {
+                        BoxField(draft.memo.orEmpty(), editable, minLines = 4, placeholder = "비워두면 '빈칸'으로 보여요") {
+                            draft = draft.copy(memo = it)
+                        }
+                    }
                 }
+
                 BlockKind.MOVE -> {
+                    Section("시간") { TimeField(draft, editable) { pickingTime = true } }
                     TransportPicker(draft.transport, editable) { draft = draft.copy(transport = it) }
-                    LabeledField("메모", draft.memo.orEmpty(), editable, minLines = 2, placeholder = "예) 서울역 3번 출구") {
-                        draft = draft.copy(memo = it)
+                    Section("메모") {
+                        BoxField(draft.memo.orEmpty(), editable, minLines = 2, placeholder = "예) 서울역 3번 출구") {
+                            draft = draft.copy(memo = it)
+                        }
                     }
                 }
             }
 
-            // 4) 안내 · 오류
+            // 안내 · 오류
             if (original.locked) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     LockIcon(TimelineColors.SubText, 12.dp)
@@ -132,22 +299,44 @@ internal fun BlockEditorSheet(
             }
             problem?.let { Text(it, fontSize = 13.sp, color = TimelineColors.Error) }
 
-            // 5) 버튼
-            if (!isNew && original.kind == BlockKind.FIXED && original.status != BlockStatus.CONFIRMED) {
-                OutlinedButton(onClick = onVoteClick, modifier = Modifier.fillMaxWidth()) { Text("투표하기") }
+            // 저장하기
+            val canSave = editable && problem == null
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(if (canSave) Black else Color(0xFFD6D6D6))
+                    .clickable(enabled = canSave) { onSave(draft.withAutoTitle(original)) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (isNew) "추가하기" else "저장하기", color = Color.White, fontSize = 16.sp)
             }
-            Button(
-                onClick = { onSave(draft) },
-                enabled = editable && problem == null,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E), contentColor = Color.White),
-            ) { Text(if (isNew) "추가하기" else "저장하기") }
-            if (!isNew && editable) {
-                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("블록 삭제", color = TimelineColors.Error)
+
+            // 투표 · 삭제
+            val canVote = !isNew && original.kind == BlockKind.FIXED && original.status != BlockStatus.CONFIRMED
+            val canDelete = !isNew && editable
+            if (canVote || canDelete) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    if (canVote) TextButton(onClick = onVoteClick) { Text("투표하기", color = Black) }
+                    if (canDelete) TextButton(onClick = { confirmDelete = true }) {
+                        Text("블록 삭제", color = TimelineColors.Error)
+                    }
                 }
             }
         }
+    }
+
+    if (pickingTime) {
+        TimeRangePickerDialog(
+            initialStart = draft.start,
+            initialEnd = draft.end,
+            onDismiss = { pickingTime = false },
+            onConfirm = { s, e ->
+                draft = draft.copy(start = s, end = e)
+                pickingTime = false
+            },
+        )
     }
 
     if (confirmDelete) {
@@ -165,14 +354,42 @@ internal fun BlockEditorSheet(
     }
 }
 
-/* ───────── 종류 전환 [자유 | 확정] ───────── */
+/**
+ * 확정 블록의 제목이 비어 있거나 '예전 장소 이름 그대로'였다면, 새 장소 이름을 제목으로 쓴다.
+ * (직접 적은 제목은 건드리지 않음)
+ */
+internal fun Block.withAutoTitle(original: Block): Block {
+    if (kind != BlockKind.FIXED) return this
+    val p = place?.trim().orEmpty()
+    if (p.isEmpty()) return this
+    val followsPlace = title.isBlank() || title == original.place
+    return if (followsPlace) copy(title = p, place = p) else copy(place = p)
+}
+
+/* ───────── 머리: [자유 | 확정]  ✕ ───────── */
+
+@Composable
+private fun Header(draft: Block, editable: Boolean, onKind: (BlockKind) -> Unit, onClose: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (draft.kind == BlockKind.MOVE) {
+            Text("이동 블록", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        } else {
+            KindToggle(draft.kind, editable, onKind)
+        }
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onClose),
+            contentAlignment = Alignment.Center,
+        ) { Text("✕", fontSize = 18.sp, color = TimelineColors.SubText) }
+    }
+}
 
 @Composable
 private fun KindToggle(kind: BlockKind, enabled: Boolean, onChange: (BlockKind) -> Unit) {
     val shape = RoundedCornerShape(50)
     Row(
         Modifier
-            .fillMaxWidth()
+            .width(140.dp)
             .clip(shape)
             .border(1.dp, TimelineColors.Border, shape),
     ) {
@@ -184,10 +401,10 @@ private fun KindToggle(kind: BlockKind, enabled: Boolean, onChange: (BlockKind) 
                     .weight(1f)
                     .background(if (selected) color else Color.White)
                     .clickable(enabled = enabled && !selected) { onChange(k) }
-                    .padding(vertical = 10.dp),
+                    .padding(vertical = 7.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                Text(label, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
             }
         }
     }
@@ -210,36 +427,196 @@ private fun StatusHint(original: Block, draft: Block, isNew: Boolean) {
             }
         }
     }
-    Text(text, fontSize = 13.sp, color = TimelineColors.SubText)
+    Text(text, fontSize = 12.sp, color = TimelineColors.SubText)
 }
 
-/* ───────── 시간 (±버튼) ───────── */
+/* ───────── 칸들 ───────── */
 
 @Composable
-private fun TimeEditor(draft: Block, enabled: Boolean, onChange: (Block) -> Unit) {
+private fun Section(label: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("시간", fontSize = 13.sp)
-            Spacer(Modifier.weight(1f))
-            Text("${draft.durationMinutes}분", fontSize = 12.sp, color = TimelineColors.SubText)
-        }
-        TimeRow("시작", draft.start, enabled) { onChange(draft.shiftStart(it)) }
-        TimeRow("종료", draft.end, enabled) { onChange(draft.shiftEnd(it)) }
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp))
+        content()
     }
 }
 
 @Composable
-private fun TimeRow(label: String, time: LocalTime, enabled: Boolean, onShift: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 13.sp, color = TimelineColors.SubText, modifier = Modifier.width(36.dp))
-        Text(time.format(HM), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(64.dp))
-        Spacer(Modifier.weight(1f))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(-60 to "−1h", -10 to "−10", 10 to "+10", 60 to "+1h").forEach { (delta, text) ->
-                SmallChip(text, selected = false, enabled = enabled) { onShift(delta) }
+private fun fieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = Color.White,
+    unfocusedContainerColor = Color.White,
+    disabledContainerColor = Color.White,
+    focusedBorderColor = Black,
+    unfocusedBorderColor = FieldBorder,
+    disabledBorderColor = TimelineColors.Axis,
+)
+
+/** 장소: 가운데 정렬 글자 + 오른쪽 [검색] */
+@Composable
+private fun PlaceField(
+    value: String,
+    enabled: Boolean,
+    searching: Boolean,
+    onChange: (String) -> Unit,
+    onSearch: () -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        enabled = enabled,
+        singleLine = true,
+        textStyle = TextStyle(fontSize = 16.sp, textAlign = TextAlign.Center),
+        placeholder = { Text("예) 오이도 빨간등대", fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+        trailingIcon = {
+            Text(
+                if (searching) "찾는 중" else "검색",
+                fontSize = 13.sp,
+                color = if (enabled && !searching) Black else TimelineColors.Axis,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = enabled && !searching, onClick = onSearch)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        shape = FieldShape,
+        colors = fieldColors(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+    )
+}
+
+/** 검색 결과 목록 — 누르면 그 장소로 */
+@Composable
+private fun SearchResults(results: List<PlaceResult>, onChoose: (PlaceResult) -> Unit, onClose: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(FieldShape)
+            .background(Color.White)
+            .border(1.dp, FieldBorder, FieldShape),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("검색 결과 ${results.size}개 · 눌러서 고르기", fontSize = 12.sp, color = TimelineColors.SubText, modifier = Modifier.weight(1f))
+            Text(
+                "닫기", fontSize = 12.sp, color = TimelineColors.SubText,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClose).padding(8.dp),
+            )
+        }
+        results.forEachIndexed { i, r ->
+            if (i > 0) HorizontalDivider(color = Color(0xFFEDEDED))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onChoose(r) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(r.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f, fill = false))
+                    r.category?.let {
+                        Spacer(Modifier.width(6.dp))
+                        Text(it.substringAfterLast('>').trim(), fontSize = 11.sp, color = TimelineColors.SubText)
+                    }
+                }
+                if (r.address.isNotBlank() && r.address != r.name) {
+                    Text(r.address, fontSize = 12.sp, color = TimelineColors.SubText)
+                }
             }
         }
     }
+}
+
+/** 상세 주소 한 줄 */
+@Composable
+private fun AddressLine(address: String) {
+    Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.Top) {
+        Text("📍", fontSize = 12.sp)
+        Spacer(Modifier.width(4.dp))
+        Text(address, fontSize = 13.sp, color = Color(0xFF424242))
+    }
+}
+
+/**
+ * 이전 일정과의 거리 — 직선거리 + 대략 도보/차 시간 + 사이에 비는 시간.
+ * 도보로 비는 시간 안에 못 갈 것 같으면 주황색으로 알려준다.
+ */
+@Composable
+private fun PrevDistanceCard(prev: Block, lat: Double, lng: Double, start: LocalTime) {
+    val m = distanceMeters(prev.lat!!, prev.lng!!, lat, lng)
+    val gap = start.toMinutes() - prev.end.toMinutes()
+    val walk = walkMinutes(m)
+    val car = carMinutes(m)
+    val tight = walk > gap
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (tight) Color(0xFFFFF3E0) else Color.White)
+            .border(1.dp, if (tight) Color(0xFFFFB74D) else Color(0xFFDDDDDD), shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            "이전 일정 · ${prev.displayTitle} (${prev.end.format(HM)} 끝)",
+            fontSize = 12.sp, color = TimelineColors.SubText,
+        )
+        Text(
+            "직선 ${formatDistance(m)} · 도보 약 ${walk}분 · 차 약 ${car}분",
+            fontSize = 14.sp, fontWeight = FontWeight.Medium,
+        )
+        Text(
+            if (gap <= 0) "이전 일정이 끝나자마자 시작해요." else "사이에 비는 시간 ${gap}분" + if (tight) " — 걸어가기엔 빠듯해요" else "",
+            fontSize = 12.sp,
+            color = if (tight) Color(0xFFE65100) else TimelineColors.SubText,
+        )
+        Text("※ 직선거리 기준 대략적인 시간이에요.", fontSize = 10.sp, color = TimelineColors.Axis)
+    }
+}
+
+/** 시간: "15:30 ~ 16:30" — 누르면 휠 선택창 */
+@Composable
+private fun TimeField(draft: Block, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 50.dp)
+            .clip(FieldShape)
+            .background(Color.White)
+            .border(1.dp, if (enabled) FieldBorder else TimelineColors.Axis, FieldShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(draft.timeText(), fontSize = 16.sp, color = if (enabled) Color.Black else TimelineColors.SubText)
+        Text(
+            "${draft.durationMinutes}분",
+            fontSize = 12.sp, color = TimelineColors.SubText,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
+    }
+}
+
+@Composable
+private fun BoxField(
+    value: String,
+    enabled: Boolean,
+    minLines: Int = 1,
+    placeholder: String? = null,
+    onChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        enabled = enabled,
+        singleLine = minLines == 1,
+        minLines = minLines,
+        textStyle = TextStyle(fontSize = 15.sp),
+        placeholder = if (placeholder != null) { { Text(placeholder, fontSize = 14.sp) } } else null,
+        shape = FieldShape,
+        colors = fieldColors(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+    )
 }
 
 /* ───────── 할 일 (마크다운: 편집 / 미리보기) ───────── */
@@ -250,7 +627,7 @@ private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit)
     val (done, total) = todoProgress(md)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("할 일", fontSize = 13.sp)
+            Text("할 일", fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp))
             if (total > 0) Text("  $done/$total", fontSize = 12.sp, color = TimelineColors.SubText)
             Spacer(Modifier.weight(1f))
             SmallChip("편집", selected = !preview) { preview = false }
@@ -258,7 +635,12 @@ private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit)
             SmallChip("미리보기", selected = preview) { preview = true }
         }
         if (preview) {
-            MarkdownView(md, enabled = enabled, onToggle = { line -> onChange(toggleCheck(md, line)) })
+            Box(
+                Modifier.fillMaxWidth().clip(FieldShape).background(Color.White)
+                    .border(1.dp, FieldBorder, FieldShape).padding(12.dp),
+            ) {
+                MarkdownView(md, enabled = enabled, onToggle = { line -> onChange(toggleCheck(md, line)) })
+            }
         } else {
             OutlinedTextField(
                 value = md,
@@ -267,7 +649,8 @@ private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit)
                 minLines = 5,
                 textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
                 placeholder = { Text("## 준비물\n- [ ] 수영복\n- **10시까지** 입장", fontSize = 13.sp) },
-                shape = RoundedCornerShape(12.dp),
+                shape = FieldShape,
+                colors = fieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
@@ -280,23 +663,34 @@ private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit)
 
 /* ───────── 태그 · 이동수단 ───────── */
 
+/** 와이어프레임: #맛집 #명소 — 고른 건 초록 */
 @Composable
 private fun TagPicker(tags: List<String>, enabled: Boolean, onChange: (List<String>) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("태그", fontSize = 13.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TAG_OPTIONS.forEach { t ->
-                val on = t in tags
-                SmallChip("#$t", selected = on, enabled = enabled) { onChange(if (on) tags - t else tags + t) }
-            }
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        TAG_OPTIONS.forEach { t ->
+            val on = t in tags
+            val shape = RoundedCornerShape(50)
+            Text(
+                "#$t",
+                fontSize = 14.sp,
+                color = if (enabled) Color.Black else TimelineColors.SubText,
+                modifier = Modifier
+                    .clip(shape)
+                    .background(if (on) TagOn else Color.White)
+                    .border(1.dp, if (on) TagOnBorder else FieldBorder, shape)
+                    .clickable(enabled = enabled) { onChange(if (on) tags - t else tags + t) }
+                    .padding(horizontal = 16.dp, vertical = 5.dp),
+            )
         }
     }
 }
 
 @Composable
 private fun TransportPicker(selected: Transport?, enabled: Boolean, onChange: (Transport) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("이동수단", fontSize = 13.sp)
+    Section("이동수단") {
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -323,33 +717,27 @@ private fun SmallChip(text: String, selected: Boolean, enabled: Boolean = true, 
         },
         modifier = Modifier
             .clip(shape)
-            .background(if (selected) Color(0xFF1E1E1E) else Color.White)
-            .border(1.dp, if (selected) Color(0xFF1E1E1E) else TimelineColors.Border, shape)
+            .background(if (selected) Black else Color.White)
+            .border(1.dp, if (selected) Black else TimelineColors.Border, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 5.dp),
     )
 }
 
+/* ───────── Preview ───────── */
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "일정 모달 · 확정(명소)")
 @Composable
-private fun LabeledField(
-    label: String,
-    value: String,
-    enabled: Boolean,
-    minLines: Int = 1,
-    placeholder: String? = null,
-    onChange: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, fontSize = 13.sp)
-        OutlinedTextField(
-            value = value,
-            onValueChange = onChange,
-            enabled = enabled,
-            singleLine = minLines == 1,
-            minLines = minLines,
-            placeholder = if (placeholder != null) { { Text(placeholder, fontSize = 14.sp) } } else null,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        )
-    }
+private fun BlockEditorPreview() {
+    val block = Block(
+        id = "b99", tripId = "preview", date = LocalDate.of(2026, 11, 7),
+        start = LocalTime.of(15, 30), end = LocalTime.of(16, 30),
+        kind = BlockKind.FIXED, status = BlockStatus.PROPOSED, source = BlockSource.USER,
+        title = "집", place = "집", tags = listOf("명소"), memo = "밥 먹기",
+        lat = 37.3800, lng = 126.7840,
+    )
+    BlockEditorSheet(
+        original = block, isNew = false, allBlocks = listOf(block),
+        onDismiss = {}, onSave = {}, onDelete = {}, onVoteClick = {},
+    )
 }

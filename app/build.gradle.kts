@@ -1,3 +1,11 @@
+import java.util.Properties
+
+// 지도 키: 프로젝트 맨 위 local.properties 에  VWORLD_KEY=발급받은키  한 줄 추가 (git 에 안 올라감)
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -20,6 +28,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "VWORLD_KEY", "\"${localProps.getProperty("VWORLD_KEY", "")}\"")
     }
 
     buildTypes {
@@ -37,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -60,4 +71,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
+
+    // 일정 모달 지도 (OpenStreetMap · API 키 필요 없음)
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 }

@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mbtrip.timeline.data.BlockRepository
+import com.example.mbtrip.timeline.data.MemberRepository
 import com.example.mbtrip.timeline.data.TimelineDependencies
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Block
@@ -64,7 +65,8 @@ private data class EditorState(val block: Block, val isNew: Boolean)
  * @param voteActions  투표 저장 로직 (최재성 담당). 기본값은 가짜
  * @param markers      체크인·체크아웃 시각 (파란 선)
  * @param now          현재 시각 표시선 위치 (빨간 선). null 이면 표시하지 않음
- * @param onInviteClick 상단 `+` → 초대 모달 연결 지점
+ * @param memberRepository 동행자 저장소 (상단 프로필 줄 + 친구 초대 모달)
+ * @param onInviteClick 상단 `+` 를 직접 처리하고 싶을 때만. null 이면 기본 친구 초대 모달이 뜬다
  * @param onHomeClick  오른쪽 위 집 버튼 → 메인(방 만들기). null 이면 버튼 숨김
  */
 @Composable
@@ -72,14 +74,18 @@ fun TimelineScreen(
     tripId: String = FakeBlocks.TRIP_ID,
     repository: BlockRepository = TimelineDependencies.blockRepository,
     voteActions: VoteActions = TimelineDependencies.voteActions,
-    members: List<Member> = FakeBlocks.members,
+    memberRepository: MemberRepository = TimelineDependencies.memberRepository,
     tripStart: LocalDate = FakeBlocks.TRIP_START,
     tripEnd: LocalDate = FakeBlocks.TRIP_END,
     markers: List<TimeMarker> = FakeBlocks.markers,
     now: LocalTime? = null,
-    onInviteClick: () -> Unit = {},
+    onInviteClick: (() -> Unit)? = null,
     onHomeClick: (() -> Unit)? = null,
 ) {
+    val members by remember(memberRepository, tripId) { memberRepository.observeMembers(tripId) }
+        .collectAsState(initial = emptyList())
+    var inviting by remember { mutableStateOf(false) }
+    val screenScope = rememberCoroutineScope()
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
         factory = TimelineViewModel.factory(repository, tripId),
@@ -103,9 +109,31 @@ fun TimelineScreen(
         onDelete = vm::delete,
         onMove = vm::move,
         onSeed = vm::seedFakeData,
-        onInviteClick = onInviteClick,
+        onInviteClick = onInviteClick ?: { inviting = true },
         onHomeClick = onHomeClick,
+        onRemoveMember = { m ->
+            screenScope.launch {
+                runCatching { memberRepository.remove(tripId, m.userId) }
+                    .onSuccess { snackbar.showSnackbar("${m.nickname} 님을 내보냈어요.") }
+                    .onFailure { snackbar.showSnackbar("내보내지 못했어요: ${it.message}") }
+            }
+        },
     )
+
+    if (inviting) {
+        InviteDialog(
+            tripId = tripId,
+            currentMembers = members,
+            repository = memberRepository,
+            onDismiss = { inviting = false },
+            onInvited = { added ->
+                inviting = false
+                screenScope.launch {
+                    snackbar.showSnackbar(added.joinToString(", ") { it.nickname } + " 님을 초대했어요.")
+                }
+            },
+        )
+    }
 }
 
 /**
@@ -130,6 +158,7 @@ internal fun TimelineContent(
     onSeed: () -> Unit,
     onInviteClick: () -> Unit,
     onHomeClick: (() -> Unit)? = null,
+    onRemoveMember: ((Member) -> Unit)? = null,
 ) {
     val list = blocks.orEmpty()
     val dates = remember(tripStart, tripEnd) { tripDates(tripStart, tripEnd) }
@@ -145,7 +174,7 @@ internal fun TimelineContent(
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick, onHomeClick)
+            MemberBar(members, onInviteClick, onHomeClick, onRemoveMember)
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
 
@@ -257,12 +286,17 @@ internal fun TimelineContent(
 
 /** 맨 위: [+](프로필 사진들) ………… ⌂ 메인으로 (onHomeClick 이 null 이면 집 버튼 숨김) */
 @Composable
-private fun MemberBar(members: List<Member>, onInviteClick: () -> Unit, onHomeClick: (() -> Unit)?) {
+private fun MemberBar(
+    members: List<Member>,
+    onInviteClick: () -> Unit,
+    onHomeClick: (() -> Unit)?,
+    onRemoveMember: ((Member) -> Unit)?,
+) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MemberRow(members, onInviteClick, Modifier.weight(1f))
+        MemberRow(members, onInviteClick, Modifier.weight(1f), onRemoveMember = onRemoveMember)
         if (onHomeClick != null) HomeButton(onHomeClick)
     }
 }
