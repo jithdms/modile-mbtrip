@@ -39,6 +39,8 @@ data class Block(
     val lat: Double? = null,
     val lng: Double? = null,
     val address: String? = null,
+    /** 확정·잠긴 블록에 누군가 '삭제 제안' 을 했는지 (바로 지우지 않고 동행자 의견을 묻는다) */
+    val deleteRequested: Boolean = false,
 ) {
     init {
         require(start < end) { "Block($id): start($start) 는 end($end) 보다 빨라야 합니다." }
@@ -120,7 +122,7 @@ data class Member(
     val userId: String,
     val nickname: String,
     val handle: String,
-    val jpScore: Int, // 0(P) ~ 100(J)
+    val jpScore: Int, // 0 = J(계획형) ~ 100 = P(즉흥형) — 데이터 구조 문서 기준
     /** 프로필 사진 주소. null = 사진 등록 안 함 → 기본 사진(고양이) */
     val photoUrl: String? = null,
     /** 사용자가 직접 적은 한 줄 소개 (프로필 카드에 보임). null/빈칸 = 안 적음 */

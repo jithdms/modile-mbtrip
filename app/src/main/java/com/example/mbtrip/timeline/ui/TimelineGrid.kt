@@ -1,5 +1,14 @@
 package com.example.mbtrip.timeline.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -140,11 +149,22 @@ internal fun DayTimelineGrid(
     scrollState: ScrollState = rememberScrollState(),
     /** 카드 안 할 일 동그라미를 눌렀을 때 (블록, 원문 줄 번호). null 이면 체크 못 함 */
     onToggleTodo: ((Block, Int) -> Unit)? = null,
+    /** 알림에서 눌러 들어온 블록 — 그 블록이 보이게 스크롤만 한다 (강조 효과 없음) */
+    highlightId: String? = null,
 ) {
     val window = remember(dayBlocks, markers) { dayWindowHours(dayBlocks, markers.map { it.time.toMinutes() }) }
     val hours = window.last - window.first
     val windowStartMin = window.first * 60
-    val pxPerMinute = with(LocalDensity.current) { HOUR_HEIGHT.toPx() } / 60f
+    val density = LocalDensity.current
+    val pxPerMinute = with(density) { HOUR_HEIGHT.toPx() } / 60f
+
+    // 강조할 블록이 생기면 화면 위에서 조금 아래쯤 오도록 스크롤
+    LaunchedEffect(highlightId, dayBlocks) {
+        val target = dayBlocks.firstOrNull { it.id == highlightId } ?: return@LaunchedEffect
+        delay(150) // 날짜 탭이 바뀌며 맨 위로 가는 스크롤이 끝난 뒤에
+        val y = with(density) { (HOUR_HEIGHT * ((target.start.toMinutes() - windowStartMin) / 60f)).toPx() }
+        scrollState.animateScrollTo((y - with(density) { 80.dp.toPx() }).roundToInt().coerceAtLeast(0))
+    }
     val totalHeight = HOUR_HEIGHT * hours
     fun yOf(minutes: Int): Dp = HOUR_HEIGHT * ((minutes - windowStartMin) / 60f)
 
@@ -316,7 +336,7 @@ private fun ArrowIcon(pointRight: Boolean, color: Color, size: Dp = 12.dp) {
  *  - 40dp 미만 (약 30분 이하): 한 줄 — 제목 + 시간
  *  - 40~66dp (약 40분)      : 시간·라벨 / 제목 + 태그
  *  - 66dp 이상 (약 50분 이상): 시간·라벨 / 제목 / 장소·할 일 + 오른쪽 아래 태그
- *    + 확정 블록이면 남는 높이만큼 할 일 체크리스트 (동그라미를 눌러 바로 체크)
+ *    + 확정 블록이면 메모 한두 줄 + 남는 높이만큼 할 일 체크리스트 (동그라미를 눌러 바로 체크)
  */
 @Composable
 private fun BlockCard(
@@ -330,7 +350,8 @@ private fun BlockCard(
     val timeLabel = previewStart?.let {
         "${minutesToTime(it).format(HM)} ~ ${minutesToTime(it + block.durationMinutes).format(HM)}"
     } ?: block.timeText()
-    val label = style.label
+    val label = if (block.deleteRequested) "삭제 제안" else style.label
+    val labelColor = if (block.deleteRequested) TimelineColors.Error else null
     val tags = if (block.kind == BlockKind.FIXED) block.tags else emptyList()
 
     BoxWithConstraints(
@@ -341,6 +362,19 @@ private fun BlockCard(
             .padding(horizontal = 10.dp, vertical = 3.dp),
     ) {
         val sub = style.fg.copy(alpha = 0.7f)
+        // 투표가 열려 있으면(투표중 · 삭제 제안) 오른쪽 위에 빨간 점
+        if (block.status == BlockStatus.VOTING || block.deleteRequested) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 8.dp, y = 0.dp)
+                    .zIndex(2f)
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE53935))
+                    .border(1.5.dp, Color.White, CircleShape),
+            )
+        }
         val cardHeight = maxHeight // 안쪽 Column 에서는 maxHeight 를 바로 못 써서 미리 꺼내 둔다
         when {
             maxHeight < 40.dp -> Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
@@ -356,7 +390,7 @@ private fun BlockCard(
             }
 
             maxHeight < 66.dp -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
-                CardTopRow(timeLabel, label, sub, block.locked)
+                CardTopRow(timeLabel, label, sub, block.locked, labelColor)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         block.displayTitle, color = style.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp,
@@ -368,7 +402,7 @@ private fun BlockCard(
 
             else -> Box(Modifier.fillMaxSize()) {
                 Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    CardTopRow(timeLabel, label, sub, block.locked)
+                    CardTopRow(timeLabel, label, sub, block.locked, labelColor)
                     Text(
                         block.displayTitle, color = style.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -382,9 +416,20 @@ private fun BlockCard(
                         if (extra.isNotEmpty()) {
                             Text(extra, color = sub, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        // 남는 높이에 할 일 체크리스트 (한 줄 22dp, 위 3줄 ≈ 50dp)
+                        // 메모 (모달에 적은 것) — 한 줄, 공간이 넉넉하면 두 줄
+                        val memo = block.memo?.trim().orEmpty()
+                        val memoLines = if (memo.isEmpty()) 0 else if (cardHeight >= 150.dp) 2 else 1
+                        if (memoLines > 0) {
+                            Text(
+                                "📝 $memo",
+                                color = style.fg.copy(alpha = 0.85f), fontSize = 11.sp,
+                                maxLines = memoLines, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        // 남는 높이에 할 일 체크리스트 (한 줄 22dp). 위쪽 글줄들 ≈ 54dp + 메모 줄당 15dp
                         val checks = remember(block.todo) { parseMarkdown(block.todo).filterIsInstance<MdLine.Check>() }
-                        val fit = ((cardHeight - 54.dp) / 22.dp).toInt().coerceAtLeast(0)
+                        val used = 54.dp + 15.dp * memoLines
+                        val fit = ((cardHeight - used) / 22.dp).toInt().coerceAtLeast(0)
                         if (checks.isNotEmpty() && fit > 0) {
                             val shown = if (checks.size > fit) checks.take((fit - 1).coerceAtLeast(1)) else checks
                             Spacer(Modifier.height(2.dp))
@@ -392,7 +437,7 @@ private fun BlockCard(
                                 Row(Modifier.height(22.dp), verticalAlignment = Alignment.CenterVertically) {
                                     CheckCircle(
                                         checked = c.checked,
-                                        enabled = onToggleTodo != null && !block.locked,
+                                        enabled = onToggleTodo != null, // 잠긴·확정 블록도 체크는 됨
                                         size = 16.dp,
                                     ) { onToggleTodo?.invoke(c.lineIndex) }
                                     Spacer(Modifier.width(6.dp))
@@ -418,11 +463,14 @@ private fun BlockCard(
 }
 
 @Composable
-private fun CardTopRow(timeLabel: String, label: String, color: Color, locked: Boolean) {
+private fun CardTopRow(timeLabel: String, label: String, color: Color, locked: Boolean, labelColor: Color? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(timeLabel, color = color, fontSize = 11.sp, maxLines = 1)
         Spacer(Modifier.weight(1f))
-        Text(label, color = color, fontSize = 10.sp, maxLines = 1)
+        Text(
+            label, color = labelColor ?: color, fontSize = 10.sp, maxLines = 1,
+            fontWeight = if (labelColor != null) FontWeight.Bold else FontWeight.Normal,
+        )
         if (locked) {
             Spacer(Modifier.width(3.dp))
             LockIcon(color, 10.dp)

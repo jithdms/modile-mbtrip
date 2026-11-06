@@ -47,9 +47,9 @@ object FakeBlocks {
     )
 
     val members = listOf(
-        Member("u_minji", "민지", "@minji_j", jpScore = 82, bio = "엑셀로 여행 계획 짜는 사람"),
-        Member("u_junho", "준호", "@junho_p", jpScore = 28, bio = "발길 닿는 대로 🚶"),
-        Member("u_seoyeon", "서연", "@seoyeon", jpScore = 55, bio = "바다랑 일몰 좋아해요"), // 와이어프레임 아바타 3개에 맞춘 가상 인물
+        Member("u_minji", "민지", "@minji_j", jpScore = 18, bio = "엑셀로 여행 계획 짜는 사람"),
+        Member("u_junho", "준호", "@junho_p", jpScore = 72, bio = "발길 닿는 대로 🚶"),
+        Member("u_seoyeon", "서연", "@seoyeon", jpScore = 45, bio = "바다랑 일몰 좋아해요"), // 와이어프레임 아바타 3개에 맞춘 가상 인물
     )
 
     private val SURF_TODO = """

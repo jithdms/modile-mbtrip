@@ -1,5 +1,6 @@
 package com.example.mbtrip.timeline.data
 
+import com.example.mbtrip.timeline.vote.FirestoreVoteActions
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.vote.FakeVoteActions
 import com.example.mbtrip.timeline.vote.VoteActions
@@ -17,7 +18,16 @@ import com.example.mbtrip.timeline.vote.VoteActions
  *   memberRepository 를 `FirestoreMemberRepository()` 로 바꾸기 (그 전엔 가짜 친구 목록으로 초대 연습)
  */
 object TimelineDependencies {
-    var blockRepository: BlockRepository = FirestoreBlockRepository()
-    var voteActions: VoteActions = FakeVoteActions
-    var memberRepository: MemberRepository = FakeMemberRepository()
+    // ── 모두 데이터 구조 문서(trips/{tripId}/…) 대로 Firestore 에 저장
+    var blockRepository: BlockRepository = FirestoreBlockRepository()   // blocks
+    var voteActions: VoteActions = FirestoreVoteActions()                // blocks/{id}/votes, comments
+    var memberRepository: MemberRepository = FirestoreMemberRepository() // members (친구 검색은 users 가 비면 가짜 목록)
+    var tripRepository: TripRepository = FirestoreTripRepository()       // trips/{tripId}
+
+    /** Firebase 없이 화면만 볼 때 (미리보기·발표 리허설용) — 앱 시작 때 한 번 부르면 된다 */
+    fun useFakes() {
+        voteActions = FakeVoteActions
+        memberRepository = FakeMemberRepository()
+        tripRepository = NoopTripRepository
+    }
 }

@@ -101,16 +101,31 @@ internal fun BlockEditorSheet(
     onSave: (Block) -> Unit,
     onDelete: () -> Unit,
     onVoteClick: () -> Unit,
+    /** 잠긴 블록의 할 일 동그라미 → 바로 저장 (잠긴 블록은 [저장하기] 가 막혀 있어서) */
+    onToggleTodo: ((lineIndex: Int) -> Unit)? = null,
+    /** 확정·잠긴 블록 '삭제 제안' (사유). null 이면 버튼 숨김 */
+    onProposeDelete: ((reason: String) -> Unit)? = null,
+    /** 확정·잠긴 블록 '수정 제안' (고친 블록). null 이면 수정 제안 불가 */
+    onProposeEdit: ((Block) -> Unit)? = null,
+    /** 삭제 제안 중인 블록: 제안 취소 / 실제로 삭제 */
+    onCancelDeleteRequest: (() -> Unit)? = null,
+    onDeleteProposed: (() -> Unit)? = null,
 ) {
     var draft by remember(original.id, isNew) { mutableStateOf(original) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var proposingDelete by remember { mutableStateOf(false) }
+    var choosingProposal by remember { mutableStateOf(false) }   // [삭제/수정 제안하기] → 고르기
+    var editingProposal by remember { mutableStateOf(false) }    // 수정 제안 중 (확정 블록도 고칠 수 있게)
+    var confirmProposedDelete by remember { mutableStateOf(false) }
     var pickingTime by remember { mutableStateOf(false) }
     var showMore by remember { mutableStateOf(original.title.isNotBlank() && original.title != original.place || original.todo.isNotBlank()) }
     var searching by remember { mutableStateOf(false) }
     var searchMessage by remember { mutableStateOf<String?>(null) }
     var results by remember { mutableStateOf<List<PlaceResult>>(emptyList()) }
 
-    val editable = !original.locked
+    // 확정됐거나 잠긴 블록은 바로 못 고치고 '삭제/수정 제안' 을 거친다
+    val needsProposal = !isNew && original.needsDeleteProposal()
+    val editable = if (needsProposal) editingProposal else !original.locked
     val problem = remember(draft, allBlocks) { validate(allBlocks, draft) }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -215,7 +230,7 @@ internal fun BlockEditorSheet(
         ) {
             // 0) 종류 전환 + 닫기
             Header(draft, editable, onKind = { draft = draft.withKind(it) }, onClose = onDismiss)
-            StatusHint(original, draft, isNew)
+            StatusHint(original, draft, isNew, needsProposal, editingProposal)
 
             when (draft.kind) {
                 BlockKind.FIXED -> {
@@ -301,7 +316,16 @@ internal fun BlockEditorSheet(
                                 draft = draft.copy(title = it)
                             }
                         }
-                        TodoEditor(draft.todo, editable) { draft = draft.copy(todo = it) }
+                        // 잠긴 블록도 체크는 됨: 체크만 바로 저장하고 화면 값도 같이 바꾼다
+                        TodoEditor(
+                            md = draft.todo,
+                            enabled = editable,
+                            onToggleOnly = if (!editable && onToggleTodo != null) {
+                                { line -> onToggleTodo(line); draft = draft.copy(todo = toggleCheck(draft.todo, line)) }
+                            } else {
+                                null
+                            },
+                        ) { draft = draft.copy(todo = it) }
                     }
                 }
 
@@ -335,24 +359,50 @@ internal fun BlockEditorSheet(
             }
             problem?.let { Text(it, fontSize = 13.sp, color = TimelineColors.Error) }
 
-            // 저장하기
-            val canSave = editable && problem == null
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(if (canSave) Black else Color(0xFFD6D6D6))
-                    .clickable(enabled = canSave) { onSave(draft.withAutoTitle(original)) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(if (isNew) "추가하기" else "저장하기", color = Color.White, fontSize = 16.sp)
+            // 큰 버튼
+            //  - 보통 블록: 저장하기 / 추가하기
+            //  - 확정·잠긴 블록: 삭제/수정 제안하기 → (수정 고르면) 수정 제안 보내기
+            val canPropose = needsProposal && !original.deleteRequested && (onProposeDelete != null || onProposeEdit != null)
+            when {
+                needsProposal && editingProposal -> {
+                    val canSend = problem == null && onProposeEdit != null && draft != original
+                    BigButton("수정 제안 보내기", enabled = canSend) { onProposeEdit?.invoke(draft.withAutoTitle(original)) }
+                    TextButton(
+                        onClick = { draft = original; editingProposal = false },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) { Text("수정 취소", color = TimelineColors.SubText) }
+                }
+                needsProposal -> {
+                    if (canPropose) BigButton("삭제/수정 제안하기", enabled = true) { choosingProposal = true }
+                }
+                else -> {
+                    BigButton(if (isNew) "추가하기" else "저장하기", enabled = editable && problem == null) {
+                        onSave(draft.withAutoTitle(original))
+                    }
+                }
             }
 
-            // 투표 · 삭제
+            // 삭제 제안 중
+            if (!isNew && original.deleteRequested) {
+                Text(
+                    "삭제 제안 중이에요 · 동행자 의견을 기다리고 있어요.",
+                    fontSize = 12.sp, color = TimelineColors.Error,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    if (onCancelDeleteRequest != null) TextButton(onClick = onCancelDeleteRequest) {
+                        Text("제안 취소", color = Black)
+                    }
+                    if (onDeleteProposed != null) TextButton(onClick = { confirmProposedDelete = true }) {
+                        Text("삭제하기", color = TimelineColors.Error)
+                    }
+                }
+            }
+
+            // 투표 · 바로 삭제 (확정 전 블록만)
             val canVote = !isNew && original.kind == BlockKind.FIXED && original.status != BlockStatus.CONFIRMED
-            val canDelete = !isNew && editable
-            if (canVote || canDelete) {
+            val canDelete = !isNew && !needsProposal && editable
+            if ((canVote || canDelete) && !editingProposal) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     if (canVote) TextButton(onClick = onVoteClick) { Text("투표하기", color = Black) }
                     if (canDelete) TextButton(onClick = { confirmDelete = true }) {
@@ -386,6 +436,85 @@ internal fun BlockEditorSheet(
                 draft = draft.copy(start = s, end = e)
                 pickingTime = false
             },
+        )
+    }
+
+    // [삭제/수정 제안하기] → 둘 중 고르기
+    if (choosingProposal) {
+        AlertDialog(
+            onDismissRequest = { choosingProposal = false },
+            title = { Text("어떤 제안을 할까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "'${original.displayTitle}' 은(는) " + (if (original.locked) "잠긴" else "확정된") +
+                            " 일정이라 바로 바꿀 수 없어요. 동행자들에게 물어볼게요.",
+                        fontSize = 13.sp, color = TimelineColors.SubText,
+                    )
+                    if (onProposeEdit != null) {
+                        ProposalOption("✏️  수정 제안", "시간·장소·메모를 고쳐서 다시 투표에 올려요") {
+                            choosingProposal = false
+                            editingProposal = true
+                        }
+                    }
+                    if (onProposeDelete != null) {
+                        ProposalOption("🗑️  삭제 제안", "이 일정을 지울지 동행자에게 물어봐요", danger = true) {
+                            choosingProposal = false
+                            proposingDelete = true
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { choosingProposal = false }) { Text("취소") } },
+        )
+    }
+
+    if (confirmProposedDelete && onDeleteProposed != null) {
+        AlertDialog(
+            onDismissRequest = { confirmProposedDelete = false },
+            title = { Text("일정을 삭제할까요?") },
+            text = { Text("동행자들이 삭제에 동의했을 때 지워 주세요. '${original.displayTitle}' 일정이 사라져요.") },
+            confirmButton = {
+                TextButton(onClick = { confirmProposedDelete = false; onDeleteProposed() }) {
+                    Text("삭제", color = TimelineColors.Error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmProposedDelete = false }) { Text("취소") } },
+        )
+    }
+
+    if (proposingDelete && onProposeDelete != null) {
+        var reason by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { proposingDelete = false },
+            title = { Text("삭제를 제안할까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "'${original.displayTitle}' 은(는) " +
+                            (if (original.locked) "잠긴" else "확정된") +
+                            " 일정이라 바로 지울 수 없어요. 동행자들에게 지울지 물어볼게요.",
+                        fontSize = 14.sp,
+                    )
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        placeholder = { Text("이유 (예: 비 소식이 있어서)", fontSize = 13.sp) },
+                        minLines = 2,
+                        shape = FieldShape,
+                        colors = fieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = reason.isNotBlank(),
+                    onClick = { proposingDelete = false; onProposeDelete(reason.trim()) },
+                ) { Text("삭제 제안", color = if (reason.isNotBlank()) TimelineColors.Error else TimelineColors.Axis) }
+            },
+            dismissButton = { TextButton(onClick = { proposingDelete = false }) { Text("취소") } },
         )
     }
 
@@ -461,9 +590,12 @@ private fun KindToggle(kind: BlockKind, enabled: Boolean, onChange: (BlockKind) 
 }
 
 @Composable
-private fun StatusHint(original: Block, draft: Block, isNew: Boolean) {
+private fun StatusHint(original: Block, draft: Block, isNew: Boolean, needsProposal: Boolean = false, editingProposal: Boolean = false) {
     val timeChanged = original.start != draft.start || original.end != draft.end
-    val text = when (draft.kind) {
+    val text = if (needsProposal) {
+        if (editingProposal) "✏️ 수정 제안 중 · 고친 내용은 '제안됨'으로 바뀌고 다시 투표해요."
+        else "확정된 일정은 바로 고칠 수 없어요. 아래 [삭제/수정 제안하기]로 동행자에게 물어보세요."
+    } else when (draft.kind) {
         BlockKind.MOVE -> "시간·이동수단·메모를 바꿀 수 있어요."
         BlockKind.FREE -> "자유 블록은 메모만 남겨요. 비워두면 '빈칸'으로 보여요."
         BlockKind.FIXED -> when {
@@ -552,6 +684,36 @@ private fun SearchIcon(color: Color, size: Dp = 20.dp) {
             strokeWidth = stroke,
             cap = StrokeCap.Round,
         )
+    }
+}
+
+/** 모달 아래 큰 검정 버튼 */
+@Composable
+private fun BigButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(if (enabled) Black else Color(0xFFD6D6D6))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = Color.White, fontSize = 16.sp) }
+}
+
+/** 제안 고르기 한 줄 */
+@Composable
+private fun ProposalOption(title: String, desc: String, danger: Boolean = false, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (danger) Color(0xFFFDECEA) else Color(0xFFF1F7FC))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (danger) TimelineColors.Error else Black)
+        Text(desc, fontSize = 12.sp, color = TimelineColors.SubText)
     }
 }
 
@@ -882,7 +1044,13 @@ private fun BoxField(
 /* ───────── 할 일 (마크다운: 편집 / 미리보기) ───────── */
 
 @Composable
-private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit) {
+private fun TodoEditor(
+    md: String,
+    enabled: Boolean,
+    /** 편집은 못 하고 체크만 할 수 있을 때 (잠긴 블록) */
+    onToggleOnly: ((Int) -> Unit)? = null,
+    onChange: (String) -> Unit,
+) {
     var preview by remember { mutableStateOf(md.isNotBlank()) }
     val (done, total) = todoProgress(md)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -899,7 +1067,11 @@ private fun TodoEditor(md: String, enabled: Boolean, onChange: (String) -> Unit)
                 Modifier.fillMaxWidth().clip(FieldShape).background(Color.White)
                     .border(1.dp, FieldBorder, FieldShape).padding(12.dp),
             ) {
-                MarkdownView(md, enabled = enabled, onToggle = { line -> onChange(toggleCheck(md, line)) })
+                MarkdownView(
+                    md,
+                    enabled = enabled || onToggleOnly != null,
+                    onToggle = { line -> if (onToggleOnly != null) onToggleOnly(line) else onChange(toggleCheck(md, line)) },
+                )
             }
         } else {
             OutlinedTextField(

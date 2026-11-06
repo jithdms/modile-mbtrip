@@ -1,5 +1,7 @@
 package com.example.mbtrip.navigation
 
+import com.example.mbtrip.timeline.ui.TimelineFocus
+import com.example.mbtrip.notifications.NotificationsScreen
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -46,6 +48,9 @@ sealed class Screen(val route: String) {
     object Friends : Screen("friends")
     object MyPage : Screen("mypage")
     object TripReview : Screen("trip_review") // 여행 후기 (XML 미리보기)
+    object Notifications : Screen("notifications")   // 알림 모아보기
+    object TripLogGallery : Screen("trip_log_gallery") // 여행 모임 로그 — 사진 모아보기 (XML)
+    object TripLogDetail : Screen("trip_log_detail")   // 여행 모임 로그 — 후기 상세 (XML)
 }
 
 @Composable
@@ -118,6 +123,7 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
                 tripStart = range?.first ?: FakeBlocks.TRIP_START,
                 tripEnd = range?.second ?: FakeBlocks.TRIP_END,
                 markers = setup?.toMarkers() ?: FakeBlocks.markers,
+                onNotificationsClick = { navController.navigate(Screen.Notifications.route) },
                 onInviteClick = { navController.navigate(Screen.Friends.route) },
                 // 집 버튼 → 메인(방 만들기). 그 위에 쌓인 화면은 모두 닫는다
                 onHomeClick = {
@@ -143,6 +149,28 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
         // 여행 후기 (XML 레이아웃 미리보기)
         composable(Screen.TripReview.route) {
             TripReviewXmlPreview()
+        }
+        // 알림 모아보기 — 여행 관련 알림을 누르면 일정표로
+        composable(Screen.Notifications.route) {
+            NotificationsScreen(
+                onBack = { navController.popBackStack() },
+                onOpen = { n ->
+                    if (n.tripId != null) {
+                        // 그 일정 블록을 강조해 달라고 부탁해 두고 일정표로
+                        n.blockId?.let { TimelineFocus.focus(it) }
+                        if (!navController.popBackStack(Screen.Timeline.route, inclusive = false)) {
+                            navController.navigate(Screen.Timeline.route)
+                        }
+                    }
+                },
+            )
+        }
+        // 여행 모임 로그: 사진 모아보기 → 사진을 누르면 후기 상세
+        composable(Screen.TripLogGallery.route) {
+            TripLogGalleryXml(onPhotoClick = { navController.navigate(Screen.TripLogDetail.route) })
+        }
+        composable(Screen.TripLogDetail.route) {
+            TripLogDetailXml()
         }
     }
 }

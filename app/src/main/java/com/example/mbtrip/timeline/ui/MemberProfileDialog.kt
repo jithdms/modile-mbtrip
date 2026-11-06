@@ -43,12 +43,12 @@ private val CardBlack = Color(0xFF1E1E1E)
 private val PColor = Color(0xFFA9E5A0) // P = 자유 블록 초록
 private val JColor = Color(0xFFAED6F1) // J = 확정 블록 하늘
 
-/** jpScore(0=P ~ 100=J) → 한 줄 설명 */
+/** jpScore(0 = J ~ 100 = P, 데이터 구조 문서 기준) → 한 줄 설명 */
 internal fun jpLabel(score: Int): String = when {
-    score >= 80 -> "확실한 J · 계획형"
-    score >= 60 -> "J 쪽 · 계획을 좋아해요"
-    score > 40 -> "J·P 반반 · 상황에 맞춰요"
-    score > 20 -> "P 쪽 · 즉흥을 좋아해요"
+    score <= 20 -> "확실한 J · 계획형"
+    score < 40 -> "J 쪽 · 계획을 좋아해요"
+    score < 60 -> "J·P 반반 · 상황에 맞춰요"
+    score < 80 -> "P 쪽 · 즉흥을 좋아해요"
     else -> "확실한 P · 즉흥형"
 }
 
@@ -111,13 +111,13 @@ internal fun MemberProfileDialog(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("여행 성향", fontSize = 13.sp, color = TimelineColors.SubText, modifier = Modifier.weight(1f))
-                    Text("J ${score}점", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("J ${100 - score}% · P ${score}%", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(10.dp))
                 JpBar(score)
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                    Text("P 즉흥", fontSize = 11.sp, color = TimelineColors.SubText, modifier = Modifier.weight(1f))
-                    Text("J 계획", fontSize = 11.sp, color = TimelineColors.SubText)
+                    Text("J 계획", fontSize = 11.sp, color = TimelineColors.SubText, modifier = Modifier.weight(1f))
+                    Text("P 즉흥", fontSize = 11.sp, color = TimelineColors.SubText)
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(jpLabel(score), fontSize = 15.sp, fontWeight = FontWeight.Medium)
@@ -158,7 +158,7 @@ internal fun MemberProfileDialog(
     }
 }
 
-/** P(초록) ─────●───── J(하늘) 막대. ● 위치 = 점수 */
+/** J(하늘) ─────●───── P(초록) 막대. ● 위치 = jpScore (0 = 왼쪽 J 끝, 100 = 오른쪽 P 끝) */
 @Composable
 private fun JpBar(score: Int) {
     BoxWithConstraints(Modifier.fillMaxWidth().height(18.dp)) {
@@ -169,7 +169,7 @@ private fun JpBar(score: Int) {
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Brush.horizontalGradient(listOf(PColor, JColor))),
+                .background(Brush.horizontalGradient(listOf(JColor, PColor))),
         )
         Box(
             Modifier
@@ -186,5 +186,5 @@ private fun JpBar(score: Int) {
 @Preview(showBackground = true, widthDp = 360, heightDp = 600, name = "프로필 카드")
 @Composable
 private fun MemberProfilePreview() {
-    MemberProfileDialog(Member("u_minji", "민지", "@minji_j", jpScore = 82, bio = "맛집 지도 들고 다니는 사람"), onDismiss = {})
+    MemberProfileDialog(Member("u_minji", "민지", "@minji_j", jpScore = 18, bio = "맛집 지도 들고 다니는 사람"), onDismiss = {})
 }

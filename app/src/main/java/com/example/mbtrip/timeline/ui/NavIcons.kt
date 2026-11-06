@@ -1,5 +1,12 @@
 package com.example.mbtrip.timeline.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -64,6 +71,44 @@ fun HomeButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color 
                 lineTo(w * 0.58f, w * 0.88f)
             }
             drawPath(house, color, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+    }
+}
+
+/**
+ * 🔔 알림 — 안 읽은 알림이 있으면 오른쪽 위에 빨간 점.
+ */
+@Composable
+fun BellButton(onClick: () -> Unit, unread: Int = 0, modifier: Modifier = Modifier, color: Color = Color.Black) {
+    TapCircle(onClick, if (unread > 0) "알림, 안 읽은 알림 있음" else "알림", modifier) {
+        Box {
+            Canvas(Modifier.size(24.dp)) {
+                val w = size.width
+                val stroke = 2.2.dp.toPx()
+                val bell = Path().apply {
+                    moveTo(w * 0.18f, w * 0.74f)               // 아래 왼쪽
+                    lineTo(w * 0.26f, w * 0.62f)
+                    lineTo(w * 0.26f, w * 0.42f)
+                    cubicTo(w * 0.26f, w * 0.20f, w * 0.74f, w * 0.20f, w * 0.74f, w * 0.42f) // 둥근 머리
+                    lineTo(w * 0.74f, w * 0.62f)
+                    lineTo(w * 0.82f, w * 0.74f)               // 아래 오른쪽
+                    close()
+                }
+                drawPath(bell, color, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawLine(color, Offset(w * 0.5f, w * 0.12f), Offset(w * 0.5f, w * 0.2f), stroke, StrokeCap.Round) // 꼭지
+                drawLine(color, Offset(w * 0.42f, w * 0.86f), Offset(w * 0.58f, w * 0.86f), stroke, StrokeCap.Round) // 추
+            }
+            // 안 읽은 알림이 있으면 빨간 점만 (개수는 알림 화면 제목 옆에)
+            if (unread > 0) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 1.dp, y = 1.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE53935)),
+                )
+            }
         }
     }
 }

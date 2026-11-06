@@ -1,5 +1,6 @@
 package com.example.mbtrip.timeline.data
 
+import com.google.firebase.firestore.SetOptions
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Member
 import com.google.android.gms.tasks.Task
@@ -74,13 +75,13 @@ class FakeMemberRepository(
 /** 초대 연습용 가짜 사용자 (예시 인물) */
 object FakeUsers {
     val all: List<Member> = FakeBlocks.members + listOf(
-        Member("u_haneul", "하늘", "@haneul_trip", jpScore = 70, bio = "카페 투어 전문"),
-        Member("u_doyun", "도윤", "@doyun", jpScore = 35, bio = "서핑 배우는 중 🏄"),
-        Member("u_yerin", "예린", "@yerin_j", jpScore = 90, bio = "10분 단위로 일정 짜요"),
-        Member("u_jiho", "지호", "@jiho_p", jpScore = 15),
-        Member("u_suah", "수아", "@sua_a", jpScore = 60, bio = "사진 찍어주는 담당 📸"),
-        Member("u_minjun", "민준", "@minjun22", jpScore = 48),
-        Member("u_chaeeun", "채은", "@chaeeun", jpScore = 77),
+        Member("u_haneul", "하늘", "@haneul_trip", jpScore = 30, bio = "카페 투어 전문"),
+        Member("u_doyun", "도윤", "@doyun", jpScore = 65, bio = "서핑 배우는 중 🏄"),
+        Member("u_yerin", "예린", "@yerin_j", jpScore = 10, bio = "10분 단위로 일정 짜요"),
+        Member("u_jiho", "지호", "@jiho_p", jpScore = 85),
+        Member("u_suah", "수아", "@sua_a", jpScore = 40, bio = "사진 찍어주는 담당 📸"),
+        Member("u_minjun", "민준", "@minjun22", jpScore = 52),
+        Member("u_chaeeun", "채은", "@chaeeun", jpScore = 23),
     )
 }
 
@@ -89,7 +90,8 @@ object FakeUsers {
 /**
  * 저장 위치
  *  - 사용자:   users/{userId}             { nickname, handle("@아이디"), handleLower, nicknameLower, jpScore, photoUrl, bio(한 줄 소개) }
- *  - 동행자:   trips/{tripId}/members/{userId}  { nickname, handle, jpScore, photoUrl, joinedAt }
+ *  - 동행자:   trips/{tripId}/members/{userId}  ← 데이터 구조 문서의 Member
+ *              { userId, tripId, jpScore(0=J~100=P) }  + 앱 확장 { nickname, handle, photoUrl, bio, joinedAt }
  *
  * 검색은 Firestore 특성상 '앞글자 일치'만 된다 (예: "min" → minji, minjun).
  * 그래서 회원가입 때 handleLower(@ 뗀 소문자), nicknameLower 를 같이 저장해야 한다.
@@ -101,17 +103,28 @@ class FirestoreMemberRepository(
     private fun membersOf(tripId: String) = db.collection("trips").document(tripId).collection("members")
 
     override fun observeMembers(tripId: String): Flow<List<Member>> = callbackFlow {
-        val reg = membersOf(tripId).orderBy("joinedAt").addSnapshotListener { snap, error ->
+        // joinedAt 이 없는 문서(진단 화면이 먼저 만든 Member)도 보이게 정렬은 앱에서 한다
+        val reg = membersOf(tripId).addSnapshotListener { snap, error ->
             if (error != null) {
                 close(error)
                 return@addSnapshotListener
             }
-            trySend(snap?.documents.orEmpty().mapNotNull { it.toMember() })
+            trySend(
+                snap?.documents.orEmpty()
+                    .sortedBy { it.getTimestamp("joinedAt")?.seconds ?: 0L }
+                    .mapNotNull { it.toMember() },
+            )
         }
         awaitClose { reg.remove() }
     }
 
     override suspend fun searchUsers(query: String): List<Member> {
+        val found = runCatching { searchFirestoreUsers(query) }.getOrDefault(emptyList())
+        // 회원가입이 아직 없어 users 가 비어 있으면 가짜 친구 목록에서 찾는다 (초대 연습용)
+        return found.ifEmpty { FakeMemberRepository().searchUsers(query) }
+    }
+
+    private suspend fun searchFirestoreUsers(query: String): List<Member> {
         val users = db.collection("users")
         val q = normalizeQuery(query)
         if (q.isEmpty()) return users.limit(10).get().await().documents.mapNotNull { it.toMember() }
@@ -126,6 +139,10 @@ class FirestoreMemberRepository(
             batch.set(
                 membersOf(tripId).document(m.userId),
                 mapOf(
+                    // ── 데이터 구조 문서의 Member 필드
+                    "userId" to m.userId,
+                    "tripId" to tripId,
+                    // ── 앱 확장 필드
                     "nickname" to m.nickname,
                     "handle" to m.handle,
                     "jpScore" to m.jpScore,
@@ -133,6 +150,7 @@ class FirestoreMemberRepository(
                     "bio" to m.bio,
                     "joinedAt" to FieldValue.serverTimestamp(),
                 ),
+                SetOptions.merge(), // 진단에서 저장한 jpScore 등 다른 필드는 지우지 않게
             )
         }
         batch.commit().await()
@@ -143,7 +161,8 @@ class FirestoreMemberRepository(
     }
 
     private fun DocumentSnapshot.toMember(): Member? {
-        val nickname = getString("nickname") ?: return null
+        // 닉네임이 아직 없는 Member(진단 점수만 저장된 경우)는 아이디로 대신 보여준다
+        val nickname = getString("nickname") ?: getString("userId") ?: id
         return Member(
             userId = id,
             nickname = nickname,

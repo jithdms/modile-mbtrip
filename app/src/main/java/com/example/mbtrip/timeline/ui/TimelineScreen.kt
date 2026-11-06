@@ -1,5 +1,10 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.notifications.AppNotification
+import com.example.mbtrip.notifications.NotificationType
+import java.time.LocalDateTime
+import kotlinx.coroutines.delay
+import com.example.mbtrip.notifications.NotificationDependencies
 import androidx.compose.animation.animateContentSize
 import androidx.compose.ui.draw.rotate
 import androidx.compose.animation.core.animateDpAsState
@@ -93,10 +98,19 @@ fun TimelineScreen(
     now: LocalTime? = null,
     onInviteClick: (() -> Unit)? = null,
     onHomeClick: (() -> Unit)? = null,
+    /** 오른쪽 위 🔔 → 알림 모아보기. null 이면 버튼 숨김 */
+    onNotificationsClick: (() -> Unit)? = null,
 ) {
+    val unreadNotifications by remember { NotificationDependencies.repository.unreadCount() }
+        .collectAsState(initial = 0)
     val members by remember(memberRepository, tripId) { memberRepository.observeMembers(tripId) }
         .collectAsState(initial = emptyList())
     val screenScope = rememberCoroutineScope()
+
+    // trips/{tripId} 문서 (목적지·기간) 를 데이터 구조 문서대로 저장
+    LaunchedEffect(tripId, tripStart, tripEnd) {
+        runCatching { TimelineDependencies.tripRepository.saveTrip(tripId, "시흥", tripStart, tripEnd) }
+    }
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
         factory = TimelineViewModel.factory(repository, tripId),
@@ -119,9 +133,20 @@ fun TimelineScreen(
         onUpdate = vm::update,
         onDelete = vm::delete,
         onMove = vm::move,
-        onSeed = vm::seedFakeData,
+        onSeed = {
+            vm.seedFakeData()
+            // 가짜 일정과 함께 가짜 동행자 3명도 members 에 넣는다
+            screenScope.launch { runCatching { memberRepository.invite(tripId, FakeBlocks.members) } }
+        },
+        onToggleTodo = vm::toggleTodo,
+        onRequestDelete = vm::markDeleteRequested,
+        onProposeEdit = vm::proposeEdit,
+        onCancelDeleteRequest = vm::cancelDeleteRequest,
+        onDeleteProposed = vm::deleteProposed,
         onInviteClick = onInviteClick ?: {},
         onHomeClick = onHomeClick,
+        onNotificationsClick = onNotificationsClick,
+        unreadNotifications = unreadNotifications,
         onInvited = { added ->
             screenScope.launch { snackbar.showSnackbar(added.joinToString(", ") { it.nickname } + " 님을 초대했어요.") }
         },
@@ -158,7 +183,14 @@ internal fun TimelineContent(
     onMove: (blockId: String, requestedStartMinutes: Int, window: IntRange) -> EditResult,
     onSeed: () -> Unit,
     onInviteClick: () -> Unit,
+    onToggleTodo: (blockId: String, lineIndex: Int) -> Unit = { _, _ -> },
+    onRequestDelete: (blockId: String) -> EditResult = { EditResult.Error("삭제 제안을 할 수 없어요.") },
+    onProposeEdit: (original: Block, edited: Block) -> EditResult = { _, _ -> EditResult.Error("수정 제안을 할 수 없어요.") },
+    onCancelDeleteRequest: (blockId: String) -> EditResult = { EditResult.Error("취소할 수 없어요.") },
+    onDeleteProposed: (blockId: String) -> EditResult = { EditResult.Error("삭제할 수 없어요.") },
     onHomeClick: (() -> Unit)? = null,
+    onNotificationsClick: (() -> Unit)? = null,
+    unreadNotifications: Int = 0,
     onRemoveMember: ((Member) -> Unit)? = null,
     memberRepository: MemberRepository = TimelineDependencies.memberRepository,
     onInvited: ((List<Member>) -> Unit)? = null,
@@ -181,9 +213,26 @@ internal fun TimelineContent(
     val avatarSize by animateDpAsState(if (atTop) 56.dp else 44.dp, label = "avatarSize")
     LaunchedEffect(selectedIndex) { gridScroll.scrollTo(0) } // 날짜 바꾸면 맨 위부터
 
+    // 알림에서 "이 블록 보여줘" → 그 날짜로 바꾸고 3.5초 동안 강조
+    val focusRequest by TimelineFocus.request.collectAsState()
+    var highlightId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(focusRequest, list) {
+        val id = focusRequest ?: return@LaunchedEffect
+        val target = list.firstOrNull { it.id == id } ?: return@LaunchedEffect // 블록이 아직 안 불러와졌으면 기다림
+        val dayIndex = dates.indexOf(target.date)
+        if (dayIndex >= 0) selectedIndex = dayIndex
+        highlightId = id
+        TimelineFocus.consume()
+        delay(3500)
+        highlightId = null
+    }
+
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick, onHomeClick, onRemoveMember, tripId, memberRepository, onInvited, avatarSize)
+            MemberBar(
+                members, onInviteClick, onHomeClick, onRemoveMember, tripId, memberRepository, onInvited, avatarSize,
+                onNotificationsClick, unreadNotifications,
+            )
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
             // 일차 탭 ↔ 비율 구분선
@@ -209,11 +258,9 @@ internal fun TimelineContent(
                 },
                 modifier = Modifier.weight(1f),
                 scrollState = gridScroll,
+                highlightId = highlightId,
                 // 카드 안 할 일 동그라미 → 그 줄만 [ ] ↔ [x]
-                onToggleTodo = { block, line ->
-                    val r = onUpdate(block, block.copy(todo = toggleCheck(block.todo, line)))
-                    if (r is EditResult.Error) toast(r.message)
-                },
+                onToggleTodo = { block, line -> onToggleTodo(block.id, line) },
             )
         }
 
@@ -278,6 +325,49 @@ internal fun TimelineContent(
                 editor = null
                 voting = st.block
             },
+            onToggleTodo = { line -> onToggleTodo(st.block.id, line) },
+            onProposeDelete = { reason ->
+                when (val r = onRequestDelete(st.block.id)) {
+                    is EditResult.Ok -> {
+                        editor = null
+                        postProposalNotification(NotificationType.DELETE_PROPOSAL, "삭제 제안", "'${st.block.displayTitle}' 삭제가 제안됐어요 · \"$reason\"", st.block)
+                        scope.launch {
+                            voteActions.proposeDelete(tripId, st.block.id, reason)
+                                .onSuccess { snackbar.showSnackbar("삭제를 제안했어요. 동행자 의견을 기다려요.") }
+                                .onFailure { snackbar.showSnackbar("삭제 제안을 보내지 못했어요: ${it.message}") }
+                        }
+                    }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
+            onProposeEdit = { edited ->
+                val before = st.block
+                when (val r = onProposeEdit(before, edited)) {
+                    is EditResult.Ok -> {
+                        editor = null
+                        val summary = editSummary(before, edited)
+                        postProposalNotification(NotificationType.VOTE_REQUEST, "수정 제안 · 투표해 주세요", "'${edited.displayTitle}' $summary", edited)
+                        scope.launch {
+                            voteActions.proposeEdit(tripId, before.id, summary)
+                                .onSuccess { snackbar.showSnackbar("수정을 제안했어요. 다시 투표에 올라갔어요.") }
+                                .onFailure { snackbar.showSnackbar("수정 제안을 보내지 못했어요: ${it.message}") }
+                        }
+                    }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
+            onCancelDeleteRequest = {
+                when (val r = onCancelDeleteRequest(st.block.id)) {
+                    is EditResult.Ok -> { editor = null; toast("삭제 제안을 취소했어요.") }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
+            onDeleteProposed = {
+                when (val r = onDeleteProposed(st.block.id)) {
+                    is EditResult.Ok -> { editor = null; toast("'${st.block.displayTitle}' 일정을 삭제했어요.") }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
         )
     }
 
@@ -313,6 +403,8 @@ private fun MemberBar(
     memberRepository: MemberRepository,
     onInvited: ((List<Member>) -> Unit)?,
     avatarSize: Dp,
+    onNotificationsClick: (() -> Unit)?,
+    unreadNotifications: Int,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
@@ -326,6 +418,7 @@ private fun MemberBar(
             onInvited = onInvited,
             avatarSize = avatarSize,
         )
+        if (onNotificationsClick != null) BellButton(onNotificationsClick, unread = unreadNotifications)
         if (onHomeClick != null) HomeButton(onHomeClick)
     }
 }
@@ -399,6 +492,35 @@ private fun KindOption(title: String, desc: String, color: Color, modifier: Modi
         Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
         Text(desc, fontSize = 12.sp, color = Color(0xFF424242))
     }
+}
+
+/* ───────────────────────── 제안 알림 ───────────────────────── */
+
+/** 삭제·수정 제안을 알림 모아보기에도 남긴다 (지금은 이 폰에만. Firestore 알림은 다음 단계) */
+private fun postProposalNotification(type: NotificationType, title: String, body: String, block: Block) {
+    NotificationDependencies.repository.post(
+        AppNotification(
+            id = "p_${block.id}_${System.currentTimeMillis()}",
+            type = type,
+            title = title,
+            body = body,
+            createdAt = LocalDateTime.now(),
+            tripId = block.tripId,
+            blockId = block.id,
+        ),
+    )
+}
+
+/** 무엇을 바꿨는지 한 줄: "시간 10:30~12:30 → 11:00~13:00 · 장소 A → B" */
+private fun editSummary(before: Block, after: Block): String {
+    val parts = buildList {
+        if (before.start != after.start || before.end != after.end) add("시간 ${before.timeText()} → ${after.timeText()}")
+        if (before.place != after.place) add("장소 ${before.place ?: "없음"} → ${after.place ?: "없음"}")
+        if (before.title != after.title) add("제목 변경")
+        if (before.memo != after.memo || before.todo != after.todo) add("메모·할 일 변경")
+        if (before.tags != after.tags) add("태그 변경")
+    }
+    return if (parts.isEmpty()) "내용 수정 제안" else parts.joinToString(" · ")
 }
 
 /* ───────────────────────── 확정 · 자유 비율 ───────────────────────── */
