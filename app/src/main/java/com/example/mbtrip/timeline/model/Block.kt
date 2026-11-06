@@ -112,5 +112,7 @@ data class Member(
     val userId: String,
     val nickname: String,
     val handle: String,
-    val jpScore: Int, // 0(J) ~ 100(P), Firestore Member convention
+    val jpScore: Int, // 0(J) ~ 100(P), Firestore convention
+    /** UI enrichment derived from the associated Trip dates; not stored on Member. */
+    val isTraveling: Boolean = false,
 )

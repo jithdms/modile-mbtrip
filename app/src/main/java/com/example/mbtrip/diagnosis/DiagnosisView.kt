@@ -20,7 +20,6 @@ class DiagnosisView @JvmOverloads constructor(
 
     private val selectedAnswers = mutableMapOf<Int, DiagnosisChoice>()
     private var displayName: String = "나"
-    private var companions: List<CompanionMember> = emptyList()
     private var onContinue: (() -> Unit)? = null
     private var onResult: ((DiagnosisResult) -> Unit)? = null
 
@@ -47,12 +46,10 @@ class DiagnosisView @JvmOverloads constructor(
 
     fun configure(
         displayName: String,
-        companions: List<CompanionMember>,
         onContinue: (() -> Unit)? = null,
         onResult: ((DiagnosisResult) -> Unit)? = null
     ) {
         this.displayName = displayName.ifBlank { "나" }
-        this.companions = companions
         this.onContinue = onContinue
         this.onResult = onResult
         findViewById<Button>(R.id.continueButton).visibility =
@@ -116,22 +113,12 @@ class DiagnosisView @JvmOverloads constructor(
         val greeting = findViewById<TextView>(R.id.resultGreeting)
         greeting.text = "${displayName}님의 성향은..."
         findViewById<TextView>(R.id.resultLabel).text = "\"${result.label}\""
-        findViewById<TextView>(R.id.resultPercent).text = "J ${result.jPercent}%  ↔  P ${result.pPercent}%"
+        findViewById<TextView>(R.id.resultDominantPercent).text =
+            "${maxOf(result.jPercent, result.pPercent)}%"
         // Stored Member.jpScore uses the opposite axis: 0 = J, 100 = P.
         findViewById<ProgressBar>(R.id.resultSpectrum).progress = result.jPercent
         findViewById<TextView>(R.id.resultScores).text =
             "J 점수 ${result.jScore} / 20 · P 점수 ${result.pScore} / 20"
-
-        val companionText = if (companions.isEmpty()) {
-            ""
-        } else {
-            companions.joinToString(separator = "\n") { companion ->
-                "${companion.name}: J ${companion.jPercent}% · P ${companion.jpScore}%"
-            }
-        }
-        findViewById<TextView>(R.id.companionScores).text = companionText
-        findViewById<TextView>(R.id.groupSummary).text =
-            TravelDiagnosis.groupSummary(result.jPercent, companions)
 
         findViewById<TextView>(R.id.diagnosisTitle).visibility = View.GONE
         findViewById<TextView>(R.id.diagnosisSubtitle).visibility = View.GONE

@@ -4,7 +4,9 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +41,7 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val memberRepository = MemberRepository()
+    val friends = remember { FakeBlocks.members.toMutableStateList() }
     NavHost(
         navController = navController,
         startDestination = Screen.Landing.route
@@ -95,7 +98,14 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
             TimelineScreen(onInviteClick = { navController.navigate(Screen.Friends.route) })
         }
         composable(Screen.Friends.route) {
-            FriendListScreen(friends = FakeBlocks.members, onBack = { navController.popBackStack() })
+            FriendListScreen(
+                friends = friends,
+                onBack = { navController.popBackStack() },
+                onDeleteFriend = { friend ->
+                    memberRepository.removeMember(FakeBlocks.TRIP_ID, friend.userId)
+                    friends.removeAll { it.userId == friend.userId }
+                },
+            )
         }
     }
 }

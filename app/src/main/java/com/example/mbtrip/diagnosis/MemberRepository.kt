@@ -2,6 +2,7 @@ package com.example.mbtrip.diagnosis
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
 
 /** Member 문서 저장소. Firebase 익명 인증 UID와 현재 여행 ID를 저장한다. */
@@ -22,9 +23,25 @@ class MemberRepository(
         require(userId.isNotBlank()) { "로그인 사용자 정보가 필요해요." }
         require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
         require(jpScore in 0..100)
-        val memberId = "${tripId}_$userId"
-        firestore.collection("Member").document(memberId).set(
-            mapOf("userId" to userId, "tripId" to tripId, "jpScore" to jpScore)
-        ).await()
+        firestore.collection("trips")
+            .document(tripId)
+            .collection("members")
+            .document(userId)
+            .set(
+                mapOf("userId" to userId, "tripId" to tripId, "jpScore" to jpScore),
+                SetOptions.merge(),
+            ).await()
+    }
+
+    /** Removes a member from one trip's participant list. */
+    suspend fun removeMember(tripId: String, userId: String) {
+        require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
+        require(userId.isNotBlank()) { "삭제할 사용자 정보가 필요해요." }
+        firestore.collection("trips")
+            .document(tripId)
+            .collection("members")
+            .document(userId)
+            .delete()
+            .await()
     }
 }
