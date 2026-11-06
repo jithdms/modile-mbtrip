@@ -1,5 +1,6 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.session.TripSession
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -75,7 +76,7 @@ fun MemberRow(
     modifier: Modifier = Modifier,
     // TODO(로그인 붙인 뒤): 방장만 남을 내보낼 수 있게, 본인 카드는 '여행 나가기' 로 바꾸기
     onRemoveMember: ((Member) -> Unit)? = null,
-    tripId: String = FakeBlocks.TRIP_ID,
+    tripId: String = TripSession.currentTripId,
     memberRepository: MemberRepository = TimelineDependencies.memberRepository,
     onInvited: ((List<Member>) -> Unit)? = null,
     /** 프로필 사진 크기 — 일정표 맨 위에 있을 땐 크게, 내리면 기본 */

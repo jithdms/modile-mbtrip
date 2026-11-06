@@ -1,5 +1,16 @@
 package com.example.mbtrip.navigation
 
+import com.example.mbtrip.notifications.NotificationDependencies
+import androidx.compose.runtime.collectAsState
+import com.example.mbtrip.createtrip.JoinCodeDialog
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.example.mbtrip.session.UserProfile
+import com.example.mbtrip.createtrip.InviteStepScreen
+import androidx.compose.runtime.LaunchedEffect
+import com.example.mbtrip.session.TripSession
 import com.example.mbtrip.timeline.ui.TimelineFocus
 import com.example.mbtrip.notifications.NotificationsScreen
 import android.widget.Toast
@@ -34,13 +45,16 @@ import kotlinx.coroutines.launch
  * true  = 앱을 켜면 "개발용 화면 목록"이 먼저 나옴 (모든 화면을 바로 열어 보기)
  * false = 원래 흐름: 랜딩 → 로그인 → 방 만들기 …  ← 발표·제출 전에 꼭 false 로!
  */
-const val SHOW_DEV_MENU = true
+const val SHOW_DEV_MENU = false
 
 // 화면 라우트(경로) 정의
 sealed class Screen(val route: String) {
     object DevMenu : Screen("dev_menu")
     object Landing : Screen("landing")
     object Login : Screen("login")
+    object AfterLogin : Screen("after_login")          // 로그인 뒤 갈림길 (진단 했나?)
+    object FirstDiagnosis : Screen("first_diagnosis")  // 처음 J/P 진단
+    object InviteStep : Screen("invite_step")          // 방 만들기 → 친구 초대
     object Home : Screen("home")             // 방 만들기 (메인)
     object CreateTrip : Screen("create_trip") // 숙소·교통 입력 (지소은)
     object Diagnosis : Screen("diagnosis")
@@ -68,18 +82,105 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
         }
         // 방 만들기 (메인)
         composable(Screen.Home.route) {
+            var joiningOpen by remember { mutableStateOf(false) }
+            var joining by remember { mutableStateOf(false) }
+            var joinError by remember { mutableStateOf<String?>(null) }
+            if (joiningOpen) {
+                JoinCodeDialog(
+                    joining = joining,
+                    error = joinError,
+                    onDismiss = { joiningOpen = false; joinError = null },
+                    onJoin = { code ->
+                        scope.launch {
+                            joining = true
+                            joinError = runCatching { TripSession.joinByCode(code, UserProfile.jpScore(context)) }
+                                .getOrElse { "참여하지 못했어요: ${it.message}" }
+                            joining = false
+                            if (joinError == null) {
+                                joiningOpen = false
+                                TripSetupStore.current = null
+                                navController.navigate(Screen.Timeline.route) // 이미 만들어진 여행 → 바로 일정표
+                            }
+                        }
+                    },
+                )
+            }
+            val unread by remember { NotificationDependencies.repository.unreadCount() }.collectAsState(initial = 0)
             TripExampleScreen(
+                onJoinWithCode = { joinError = null; joiningOpen = true },
+                // 하단 바
+                onMenuClick = { navController.navigate(Screen.TripLogGallery.route) },   // ☰ 여행 기록(모임 로그)
+                onNotificationsClick = { navController.navigate(Screen.Notifications.route) },
+                onFriendsClick = { navController.navigate(Screen.Friends.route) },
+                onMyPageClick = { navController.navigate(Screen.MyPage.route) },
+                hasUnreadNotifications = unread > 0,
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateNext = { navController.navigate(Screen.CreateTrip.route) }
+                // ① 입력값으로 새 여행 준비 (문제가 있으면 안내 문구 → 다음 화면으로 안 감)
+                onCreateTrip = { dep, arr, range, n ->
+                    TripSetupStore.current = null
+                    TripSession.start(dep, arr, range, n).also { problem ->
+                        if (problem == null) {
+                            // 여행 문서 + 나를 바로 저장 → 친구 초대 화면에서 내가 보인다
+                            scope.launch {
+                                runCatching { TripSession.saveBasics(UserProfile.jpScore(context)) }
+                                    .onFailure {
+                                        Toast.makeText(context, "여행을 저장하지 못했어요: ${it.message}", Toast.LENGTH_LONG).show()
+                                    }
+                            }
+                        }
+                    }
+                },
+                onNavigateNext = { navController.navigate(Screen.InviteStep.route) }
+            )
+        }
+        // 방 만들기 → 친구 초대 → 숙소·교통
+        composable(Screen.InviteStep.route) {
+            InviteStepScreen(
+                onBack = { navController.popBackStack() },
+                onNext = { navController.navigate(Screen.CreateTrip.route) },
+            )
+        }
+        // 로그인 뒤 갈림길: 진단을 한 적 없으면 진단부터
+        composable(Screen.AfterLogin.route) {
+            LaunchedEffect(Unit) {
+                val next = if (UserProfile.hasDiagnosis(context)) Screen.Home.route else Screen.FirstDiagnosis.route
+                navController.navigate(next) { popUpTo(Screen.AfterLogin.route) { inclusive = true } }
+            }
+        }
+        // 처음 J/P 진단 → [계속하기] → 방 만들기
+        composable(Screen.FirstDiagnosis.route) {
+            DiagnosisScreen(
+                onContinue = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.FirstDiagnosis.route) { inclusive = true }
+                    }
+                },
+                onResult = { result ->
+                    scope.launch {
+                        runCatching { UserProfile.saveJpScore(context, result.firestoreJpScore) }
+                            .onFailure {
+                                Toast.makeText(context, "진단 점수를 저장하지 못했어요: ${it.message}", Toast.LENGTH_LONG).show()
+                            }
+                    }
+                },
             )
         }
         // 숙소·교통 입력 (지소은) — 방 만들기 [생성하기] 다음 화면
         composable(Screen.CreateTrip.route) {
             TripSetupScreen(
+                tripStart = TripSession.startDate,
+                tripEnd = TripSession.endDate,
                 onBack = { navController.popBackStack() },
                 onInviteClick = { navController.navigate(Screen.Friends.route) },
                 onSave = { setup ->
                     TripSetupStore.current = setup
+                    // ② Firestore 에 여행·나(멤버) 저장 → 일정표
+                    scope.launch {
+                        runCatching { TripSession.save(setup) }
+                            .onFailure {
+                                Toast.makeText(context, "여행을 저장하지 못했어요: ${it.message}", Toast.LENGTH_LONG).show()
+                            }
+                    }
                     navController.navigate(Screen.Timeline.route)
                 }
             )
@@ -99,8 +200,9 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
                 onResult = { result ->
                     scope.launch {
                         try {
+                            UserProfile.saveJpScore(context, result.firestoreJpScore)
                             memberRepository.saveJpScore(
-                                tripId = FakeBlocks.TRIP_ID,
+                                tripId = TripSession.currentTripId,
                                 jpScore = result.firestoreJpScore,
                             )
                             Toast.makeText(context, "진단 점수를 Firebase에 저장했어요.", Toast.LENGTH_SHORT).show()
@@ -120,14 +222,16 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
             val setup = TripSetupStore.current
             val range = setup?.dateRange()
             TimelineScreen(
-                tripStart = range?.first ?: FakeBlocks.TRIP_START,
-                tripEnd = range?.second ?: FakeBlocks.TRIP_END,
+                tripId = TripSession.currentTripId,
+                tripStart = TripSession.startDate ?: range?.first ?: FakeBlocks.TRIP_START,
+                tripEnd = TripSession.endDate ?: range?.second ?: FakeBlocks.TRIP_END,
                 markers = setup?.toMarkers() ?: FakeBlocks.markers,
                 onNotificationsClick = { navController.navigate(Screen.Notifications.route) },
                 onInviteClick = { navController.navigate(Screen.Friends.route) },
                 // 집 버튼 → 메인(방 만들기). 그 위에 쌓인 화면은 모두 닫는다
                 onHomeClick = {
                     TripSetupStore.current = null
+                    TripSession.clear()
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                         launchSingleTop = true

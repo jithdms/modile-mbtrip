@@ -1,5 +1,7 @@
 package com.example.mbtrip.timeline.ui
 
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -118,9 +120,17 @@ class TimelineViewModel(
     }
 
     /** 테스트용: 빈 여행에 거북섬 1박 가짜 일정을 넣는다 (Firestore 처음 연결했을 때 확인용) */
-    fun seedFakeData() {
+    /**
+     * 가짜 일정을 이 여행 날짜로 옮겨서 넣는다 (거북섬 1박 예시의 1일차 → 여행 첫날).
+     * 여행 기간을 넘어가는 날의 블록은 넣지 않는다.
+     */
+    fun seedFakeData(tripStart: LocalDate = FakeBlocks.TRIP_START, tripEnd: LocalDate = FakeBlocks.TRIP_END) {
+        val shift = ChronoUnit.DAYS.between(FakeBlocks.TRIP_START, tripStart)
+        val shifted = FakeBlocks.blocks
+            .map { it.copy(tripId = tripId, date = it.date.plusDays(shift)) }
+            .filter { !it.date.isAfter(tripEnd) }
         viewModelScope.launch {
-            runCatching { FakeBlocks.blocks.forEach { repository.upsert(it.copy(tripId = tripId)) } }
+            runCatching { shifted.forEach { repository.upsert(it) } }
                 .onSuccess { _messages.tryEmit("가짜 일정을 넣었어요.") }
                 .onFailure { _messages.tryEmit("가짜 일정을 넣지 못했어요: ${it.message}") }
         }

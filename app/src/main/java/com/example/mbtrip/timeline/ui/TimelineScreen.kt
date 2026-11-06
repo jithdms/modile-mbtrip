@@ -1,5 +1,8 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.diagnosis.GroupRatio
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import com.example.mbtrip.notifications.AppNotification
 import com.example.mbtrip.notifications.NotificationType
 import java.time.LocalDateTime
@@ -60,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mbtrip.timeline.data.BlockRepository
 import com.example.mbtrip.timeline.data.MemberRepository
+import com.example.mbtrip.session.TripSession
 import com.example.mbtrip.timeline.data.TimelineDependencies
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Block
@@ -109,7 +113,7 @@ fun TimelineScreen(
 
     // trips/{tripId} 문서 (목적지·기간) 를 데이터 구조 문서대로 저장
     LaunchedEffect(tripId, tripStart, tripEnd) {
-        runCatching { TimelineDependencies.tripRepository.saveTrip(tripId, "시흥", tripStart, tripEnd) }
+        runCatching { TimelineDependencies.tripRepository.saveTrip(tripId, TripSession.destination, tripStart, tripEnd) }
     }
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
@@ -134,7 +138,7 @@ fun TimelineScreen(
         onDelete = vm::delete,
         onMove = vm::move,
         onSeed = {
-            vm.seedFakeData()
+            vm.seedFakeData(tripStart, tripEnd)
             // 가짜 일정과 함께 가짜 동행자 3명도 members 에 넣는다
             screenScope.launch { runCatching { memberRepository.invite(tripId, FakeBlocks.members) } }
         },
@@ -239,7 +243,7 @@ internal fun TimelineContent(
             HorizontalDivider(color = Color(0xFFE0E0E0))
 
             val dayBlocks = list.filter { it.date == selectedDate }.sortedBy { it.start }
-            KindRatioBar(dayBlocks, list)
+            KindRatioBar(dayBlocks, list, GroupRatio.of(members.map { it.jpScore }))
             DayTimelineGrid(
                 dayBlocks = dayBlocks,
                 markers = markers.filter { it.date == selectedDate },
@@ -536,7 +540,7 @@ private fun editSummary(before: Block, after: Block): String {
  * 이동 블록은 계산에서 뺀다.
  */
 @Composable
-private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>) {
+private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recommended: GroupRatio? = null) {
     fun minutesOf(bs: List<Block>, k: BlockKind) = bs.filter { it.kind == k }.sumOf { it.durationMinutes }
     val fixed = minutesOf(dayBlocks, BlockKind.FIXED)
     val free = minutesOf(dayBlocks, BlockKind.FREE)
@@ -574,22 +578,50 @@ private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>) {
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                Row(
-                    Modifier
-                        .padding(end = 8.dp)
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(TimelineColors.Free),
-                ) {
-                    if (animated > 0f) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth(animated.coerceIn(0f, 1f))
-                                .fillMaxHeight()
-                                .background(TimelineColors.FixedDash),
-                        )
+                Box(Modifier.padding(end = 8.dp).fillMaxWidth().height(14.dp), contentAlignment = Alignment.CenterStart) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(TimelineColors.Free),
+                    ) {
+                        if (animated > 0f) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(animated.coerceIn(0f, 1f))
+                                    .fillMaxHeight()
+                                    .background(TimelineColors.FixedDash),
+                            )
+                        }
                     }
+                    // 적정 비율 위치 = 검은 세로 눈금
+                    if (recommended != null) {
+                        BoxWithConstraints(Modifier.fillMaxWidth().height(14.dp)) {
+                            val x = (maxWidth - 2.dp) * (recommended.fixedPercent / 100f)
+                            Box(
+                                Modifier
+                                    .offset(x = x)
+                                    .width(2.dp)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(1.dp))
+                                    .background(Color(0xFF1E1E1E)),
+                            )
+                        }
+                    }
+                }
+                if (recommended != null) {
+                    val diff = fixedPct - recommended.fixedPercent
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "▎적정 확정 ${recommended.fixedPercent}% · 자유 ${recommended.freePercent}%  " + when {
+                            diff >= 10 -> "· 확정이 조금 많아요"
+                            diff <= -10 -> "· 자유가 조금 많아요"
+                            else -> "· 딱 좋아요"
+                        },
+                        fontSize = 11.sp,
+                        color = if (kotlin.math.abs(diff) >= 10) Color(0xFFE65100) else TimelineColors.SubText,
+                    )
                 }
             }
         }

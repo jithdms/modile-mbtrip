@@ -15,21 +15,29 @@ import java.time.LocalDate
  * + 앱 확장: updatedAt
  */
 interface TripRepository {
-    suspend fun saveTrip(tripId: String, destination: String, startDate: LocalDate, endDate: LocalDate)
+    /** @param extra 문서 표에 없는 앱 확장 필드 (출발지·인원·숙소 시간 등) */
+    suspend fun saveTrip(
+        tripId: String, destination: String, startDate: LocalDate, endDate: LocalDate,
+        extra: Map<String, Any?> = emptyMap(),
+    )
 }
 
 /** 저장하지 않는 가짜 (미리보기·테스트용) */
 object NoopTripRepository : TripRepository {
-    override suspend fun saveTrip(tripId: String, destination: String, startDate: LocalDate, endDate: LocalDate) = Unit
+    override suspend fun saveTrip(
+        tripId: String, destination: String, startDate: LocalDate, endDate: LocalDate, extra: Map<String, Any?>,
+    ) = Unit
 }
 
 class FirestoreTripRepository(
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance(),
 ) : TripRepository {
-    override suspend fun saveTrip(tripId: String, destination: String, startDate: LocalDate, endDate: LocalDate) {
+    override suspend fun saveTrip(
+        tripId: String, destination: String, startDate: LocalDate, endDate: LocalDate, extra: Map<String, Any?>,
+    ) {
         require(!endDate.isBefore(startDate)) { "종료일은 시작일 이후여야 해요." }
         db.collection("trips").document(tripId).set(
-            mapOf(
+            extra + mapOf(
                 "destination" to destination,
                 "startDate" to startDate.toString(),
                 "endDate" to endDate.toString(),

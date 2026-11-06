@@ -115,23 +115,23 @@ class DiagnosisView @JvmOverloads constructor(
         onResult?.invoke(result)
         val greeting = findViewById<TextView>(R.id.resultGreeting)
         greeting.text = "${displayName}님의 성향은..."
-        findViewById<TextView>(R.id.resultLabel).text = "\"${result.label}\""
+        val type = result.type
+        // 기준표 구간별 결과: 이름 · 성향
+        findViewById<TextView>(R.id.resultLabel).text = "${type.emoji} ${type.title}\n(${type.label})"
         findViewById<TextView>(R.id.resultPercent).text = "J ${result.jPercent}%  ↔  P ${result.pPercent}%"
         // Stored Member.jpScore uses the opposite axis: 0 = J, 100 = P.
         findViewById<ProgressBar>(R.id.resultSpectrum).progress = result.jPercent
         findViewById<TextView>(R.id.resultScores).text =
             "J 점수 ${result.jScore} / 20 · P 점수 ${result.pScore} / 20"
 
-        val companionText = if (companions.isEmpty()) {
-            ""
-        } else {
-            companions.joinToString(separator = "\n") { companion ->
-                "${companion.name}: J ${companion.jPercent}% · P ${companion.jpScore}%"
-            }
-        }
-        findViewById<TextView>(R.id.companionScores).text = companionText
+        // 구간별 설명 (동행자 비교는 빼고, 내 유형 설명으로)
+        findViewById<TextView>(R.id.companionScores).text = buildString {
+            append(type.summary)
+            append("\n\n이런 모습이 있어요\n")
+            type.traits.forEach { append("· ").append(it).append("\n") }
+        }.trimEnd()
         findViewById<TextView>(R.id.groupSummary).text =
-            TravelDiagnosis.groupSummary(result.jPercent, companions)
+            "함께 일정 짤 때\n${type.tip}\n\n편한 일정 비율  확정 ${type.fixedPercent}% · 자유 ${type.freePercent}%"
 
         findViewById<TextView>(R.id.diagnosisTitle).visibility = View.GONE
         findViewById<TextView>(R.id.diagnosisSubtitle).visibility = View.GONE

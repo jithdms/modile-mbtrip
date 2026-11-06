@@ -34,6 +34,7 @@ private val entries = listOf(
     DevEntry("① 랜딩 (전체 흐름 시작)", "이수진", Screen.Landing.route),
     DevEntry("② 로그인", "이수진", Screen.Login.route),
     DevEntry("③ 방 만들기 (메인)", "이수진", Screen.Home.route),
+    DevEntry("③-1 친구 초대 (방 만들기 다음)", "지소은", Screen.InviteStep.route),
     DevEntry("④ 숙소·교통 입력", "지소은", Screen.CreateTrip.route),
     DevEntry("⑤ 일정표", "지소은", Screen.Timeline.route),
     DevEntry("친구 리스트", "신소율", Screen.Friends.route),
