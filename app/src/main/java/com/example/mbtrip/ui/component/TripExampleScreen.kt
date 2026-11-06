@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
+import androidx.compose.ui.res.painterResource
+import com.example.mbtrip.R
 
 @Composable
 fun TripExampleScreen(
@@ -79,10 +81,34 @@ fun TripExampleScreen(
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("☰", style = MaterialTheme.typography.titleLarge)
-                    Text("🔔", style = MaterialTheme.typography.titleLarge)
-                    Text("👥", style = MaterialTheme.typography.titleLarge)
-                    Text("👤", style = MaterialTheme.typography.titleLarge)
+                    IconButton(onClick = { /* TODO: 메뉴 화면 이동 */ }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.menu_burger),
+                            contentDescription = "메뉴",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = { /* TODO: 알림 화면 이동 */ }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.bell),
+                            contentDescription = "알림",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = { /* TODO: 그룹 화면 이동 */ }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.users_alt),
+                            contentDescription = "그룹",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = { /* TODO: 마이페이지 이동 */ }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.user),
+                            contentDescription = "마이페이지",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }
@@ -145,67 +171,78 @@ fun TripExampleScreen(
                         }
                     }
 
-                    // 2. 날짜 선택 영역 (출발일 ~ 도착일, 물결표 가운데 고정)
+                    // 2. 날짜 선택 영역 (하나의 큰 상자로 감싸기)
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(text = "날짜 선택", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        Row(
+                        OutlinedCard(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            // 출발일 박스
-                            OutlinedCard(
-                                onClick = {
-                                    selectingMode = "START"
-                                    calendarYear = startDate.year
-                                    calendarMonth = startDate.monthValue - 1
-                                    showCalendarDialog = true
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = startDate.format(dateFormatter), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    Icon(imageVector = Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                                }
-                            }
-
-                            // 물결표 가운데 고정
-                            Text(
-                                text = "~",
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.outlinedCardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
                             )
-
-                            // 도착일 박스
-                            OutlinedCard(
-                                onClick = {
-                                    selectingMode = "END"
-                                    calendarYear = endDate.year
-                                    calendarMonth = endDate.monthValue - 1
-                                    showCalendarDialog = true
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(
+                                // 출발일 영역
+                                Box(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            selectingMode = "START"
+                                            calendarYear = startDate.year
+                                            calendarMonth = startDate.monthValue - 1
+                                            showCalendarDialog = true
+                                        }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp)
                                 ) {
-                                    Text(text = endDate.format(dateFormatter), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                    Icon(imageVector = Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = startDate.format(dateFormatter), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        Icon(imageVector = Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+
+                                // 가운데 고정되는 ~ 기호
+                                Text(
+                                    text = "~",
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                // 도착일 영역
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            selectingMode = "END"
+                                            calendarYear = endDate.year
+                                            calendarMonth = endDate.monthValue - 1
+                                            showCalendarDialog = true
+                                        }
+                                        .padding(vertical = 8.dp, horizontal = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = endDate.format(dateFormatter), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        Icon(imageVector = Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }
                                 }
                             }
                         }
