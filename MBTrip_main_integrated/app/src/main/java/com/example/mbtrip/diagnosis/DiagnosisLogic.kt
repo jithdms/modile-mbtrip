@@ -28,12 +28,71 @@ data class CompanionMember(
     val jPercent: Int get() = 100 - jpScore
 }
 
+/**
+ * 진단 결과 유형 — 기준표의 '진단 결과 범위' (J 비율 기준 5구간).
+ * 문구는 여기서만 고치면 결과 화면에 그대로 나온다.
+ */
+enum class DiagnosisType(
+    val jRange: IntRange,
+    val emoji: String,
+    val title: String,     // 결과 이름
+    val label: String,     // 짧은 성향 표시
+    val summary: String,   // 한 줄 설명
+    val traits: List<String>, // 이런 모습이 있어요
+    val tip: String,       // 함께 일정 짤 때
+    val fixedPercent: Int, // 이 사람에게 편한 확정:자유 비율 (확정 %)
+) {
+    STRONG_P(
+        0..20, "🎈", "자유로운 즉흥 여행가", "강한 P 성향",
+        "계획보다 그날의 분위기와 발견을 즐기는 여행가예요.",
+        listOf("일정은 현지에서, 그때그때 정해요", "갑작스러운 변경도 오히려 즐거워요", "예약은 최대한 미뤄도 괜찮아요"),
+        "꼭 필요한 예약(숙소·교통)만 함께 정하고, 나머지는 자유 블록으로 넉넉히 남겨 두세요.",
+        20,
+    ),
+    P(
+        21..40, "🧭", "유연한 탐험가", "P 성향",
+        "큰 방향만 정하고 현지에서 유연하게 움직이는 편이에요.",
+        listOf("가고 싶은 곳 몇 군데만 정해 둬요", "대안을 찾는 걸 어렵지 않게 생각해요", "자유시간이 생기면 주변을 둘러봐요"),
+        "핵심 일정 1~2개만 확정하고, 그 사이를 자유 블록으로 이어 보세요.",
+        35,
+    ),
+    BALANCED(
+        41..60, "⚖️", "균형 잡힌 여행가", "균형형",
+        "계획과 즉흥 사이에서 상황에 맞게 균형을 잡아요.",
+        listOf("중요한 것만 미리 정해요", "후보를 몇 개 두고 당일에 골라요", "동행자 성향에 맞춰 조율을 잘해요"),
+        "J·P 동행자 사이에서 다리 역할을 해 줄 수 있어요. 확정과 자유를 반반 섞어 보세요.",
+        50,
+    ),
+    J(
+        61..80, "🗺️", "든든한 계획러", "J 성향",
+        "주요 일정과 예약은 미리 챙기고, 세부는 조금 열어 두는 편이에요.",
+        listOf("숙소·교통·식당은 미리 예약해요", "일정이 어긋나면 순서를 다시 짜요", "대체 장소도 미리 찾아 둬요"),
+        "동선과 예약을 맡아 주면 모두가 편해요. 하루 한두 칸은 자유 블록으로 비워 두세요.",
+        65,
+    ),
+    STRONG_J(
+        81..100, "📋", "철저한 여행 설계자", "강한 J 성향",
+        "시간대별 동선과 예약까지 다 정해야 마음이 편한 여행가예요.",
+        listOf("이동 시간까지 계산해 일정을 짜요", "계획이 틀어지면 다른 일정을 조정해 지켜요", "마지막 날까지 빈 시간이 없어요"),
+        "확정 블록을 중심으로 짜되, 즉흥파 동행자를 위해 쉬는 시간을 꼭 남겨 주세요.",
+        80,
+    );
+
+    val freePercent: Int get() = 100 - fixedPercent
+
+    companion object {
+        fun of(jPercent: Int): DiagnosisType =
+            entries.firstOrNull { jPercent.coerceIn(0, 100) in it.jRange } ?: BALANCED
+    }
+}
+
 data class DiagnosisResult(
     val jScore: Int,
     val pScore: Int,
     val jPercent: Int,
     val pPercent: Int,
-    val label: String
+    val label: String,
+    val type: DiagnosisType = DiagnosisType.of(jPercent),
 ) {
     /** Value to save to Member.jpScore (0 = J, 100 = P). */
     val firestoreJpScore: Int get() = pPercent
@@ -148,15 +207,9 @@ object TravelDiagnosis {
         val jPercent = (jScore * 100.0 / total).roundToInt()
         val pPercent = 100 - jPercent
 
-        val label = when (jPercent) {
-            in 0..20 -> "강한 P 성향"
-            in 21..40 -> "P 성향"
-            in 41..60 -> "균형형"
-            in 61..80 -> "J 성향"
-            else -> "강한 J 성향"
-        }
-
-        return DiagnosisResult(jScore, pScore, jPercent, pPercent, label)
+        // 기준표 '진단 결과 범위': J 비율 0~20 / 21~40 / 41~60 / 61~80 / 81~100
+        val type = DiagnosisType.of(jPercent)
+        return DiagnosisResult(jScore, pScore, jPercent, pPercent, type.label, type)
     }
 
     /** Simple descriptive guidance based on the spread of companions' J percentages. */
@@ -167,11 +220,12 @@ object TravelDiagnosis {
 
         val scores = companions.map(CompanionMember::jPercent) + selfJPercent
         val spread = (scores.maxOrNull() ?: selfJPercent) - (scores.minOrNull() ?: selfJPercent)
+        val ratio = ItineraryAllocator.ratioFor(scores.map { 100 - it })
         val guidance = when {
             spread <= 15 -> "성향 차이가 크지 않아요. 각자 편한 방식으로 일정을 정해도 좋아요."
             spread <= 35 -> "계획을 정할 부분과 현지에서 정할 부분을 나눠 합의해보세요."
             else -> "일정 운영 방식 차이가 클 수 있어요. 예약과 자유시간의 기준을 미리 맞춰보세요."
         }
-        return "동행자와의 J 성향 차이는 최대 ${spread}%p예요. $guidance"
+        return "동행자와의 J 성향 차이는 최대 ${spread}%p예요. 추천 일정 비율은 확정 ${ratio.fixedPercent}% · 자유 ${ratio.freePercent}%예요. $guidance"
     }
 }

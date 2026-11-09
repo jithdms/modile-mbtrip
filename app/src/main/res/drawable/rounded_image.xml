@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- 모서리를 둥글게 깎아주는 값 (원하시는 만큼 조절 가능) -->
+    <corners android:radius="16dp" />
+</shape>

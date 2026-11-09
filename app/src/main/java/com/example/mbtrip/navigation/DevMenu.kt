@@ -1,6 +1,9 @@
 package com.example.mbtrip.navigation
 
 import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,12 +34,16 @@ private val entries = listOf(
     DevEntry("① 랜딩 (전체 흐름 시작)", "이수진", Screen.Landing.route),
     DevEntry("② 로그인", "이수진", Screen.Login.route),
     DevEntry("③ 방 만들기 (메인)", "이수진", Screen.Home.route),
+    DevEntry("③-1 친구 초대 (방 만들기 다음)", "지소은", Screen.InviteStep.route),
     DevEntry("④ 숙소·교통 입력", "지소은", Screen.CreateTrip.route),
     DevEntry("⑤ 일정표", "지소은", Screen.Timeline.route),
     DevEntry("친구 리스트", "신소율", Screen.Friends.route),
     DevEntry("J/P 진단", "", Screen.Diagnosis.route),
     DevEntry("마이페이지", "", Screen.MyPage.route),
     DevEntry("여행 후기 (XML)", "", Screen.TripReview.route),
+    DevEntry("알림 모아보기", "지소은", Screen.Notifications.route),
+    DevEntry("여행 모임 로그 · 사진 모아보기", "", Screen.TripLogGallery.route),
+    DevEntry("여행 모임 로그 · 후기 상세", "", Screen.TripLogDetail.route),
 )
 
 /**
@@ -83,4 +90,37 @@ fun TripReviewXmlPreview() {
         factory = { ctx -> LayoutInflater.from(ctx).inflate(R.layout.activity_trip_review, null, false) },
         modifier = Modifier.fillMaxSize(),
     )
+}
+
+/**
+ * 여행 모임 로그 — 사진 모아보기 (res/layout/activity_trip_log_gallery.xml).
+ * 안의 사진(ImageView)을 누르면 onPhotoClick → 후기 상세로 이동.
+ */
+@Composable
+fun TripLogGalleryXml(onPhotoClick: () -> Unit) {
+    AndroidView(
+        factory = { ctx ->
+            LayoutInflater.from(ctx).inflate(R.layout.activity_trip_log_gallery, null, false).also { root ->
+                root.forEachImageView { it.setOnClickListener { onPhotoClick() } }
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+/** 여행 모임 로그 — 후기 상세 (res/layout/activity_trip_log_detail.xml) */
+@Composable
+fun TripLogDetailXml() {
+    AndroidView(
+        factory = { ctx -> LayoutInflater.from(ctx).inflate(R.layout.activity_trip_log_detail, null, false) },
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+/** 화면 안의 모든 ImageView 를 찾아서 실행 (사진 그리드에 id 가 없어서) */
+private fun View.forEachImageView(action: (ImageView) -> Unit) {
+    when (this) {
+        is ImageView -> action(this)
+        is ViewGroup -> for (i in 0 until childCount) getChildAt(i).forEachImageView(action)
+    }
 }

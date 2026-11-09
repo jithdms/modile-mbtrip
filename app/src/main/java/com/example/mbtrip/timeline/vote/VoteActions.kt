@@ -15,6 +15,19 @@ interface VoteActions {
      * 실패하면 Result.failure — 화면이 오류 문구를 보여준다.
      */
     suspend fun submitVote(tripId: String, blockId: String, choice: VoteChoice, comment: String): Result<Unit>
+
+    /**
+     * 확정·잠긴 블록 '삭제 제안'. 동행자들에게 지울지 묻는 투표를 연다.
+     * (화면은 블록에 deleteRequested = true 를 이미 저장한 뒤 이걸 부른다)
+     * 기본 구현이 있어서 아직 안 만들어도 컴파일은 된다 — 최재성 님이 override 하면 됨.
+     */
+    suspend fun proposeDelete(tripId: String, blockId: String, reason: String): Result<Unit> = Result.success(Unit)
+
+    /**
+     * 확정·잠긴 블록 '수정 제안'. 화면은 고친 내용을 이미 '제안됨'으로 저장한 뒤 이걸 부른다.
+     * summary = 무엇을 바꿨는지 한 줄 (예: "10:30~12:30 → 11:00~13:00")
+     */
+    suspend fun proposeEdit(tripId: String, blockId: String, summary: String): Result<Unit> = Result.success(Unit)
 }
 
 enum class VoteChoice { AGREE, DISAGREE }
@@ -35,6 +48,14 @@ object FakeVoteActions : VoteActions {
     ): Result<Unit> {
         delay(300)
         sent += Triple(blockId, choice, comment.trim())
+        return Result.success(Unit)
+    }
+
+    val deleteProposals = mutableListOf<Pair<String, String>>() // (blockId, reason) 확인용
+
+    override suspend fun proposeDelete(tripId: String, blockId: String, reason: String): Result<Unit> {
+        delay(300)
+        deleteProposals += blockId to reason.trim()
         return Result.success(Unit)
     }
 }

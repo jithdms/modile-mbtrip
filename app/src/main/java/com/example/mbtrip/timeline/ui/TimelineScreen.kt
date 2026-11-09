@@ -1,5 +1,25 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.diagnosis.GroupRatio
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import com.example.mbtrip.notifications.AppNotification
+import com.example.mbtrip.notifications.NotificationType
+import java.time.LocalDateTime
+import kotlinx.coroutines.delay
+import com.example.mbtrip.notifications.NotificationDependencies
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.draw.rotate
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.unit.Dp
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mbtrip.timeline.data.BlockRepository
+import com.example.mbtrip.timeline.data.MemberRepository
+import com.example.mbtrip.session.TripSession
 import com.example.mbtrip.timeline.data.TimelineDependencies
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Block
@@ -64,7 +86,8 @@ private data class EditorState(val block: Block, val isNew: Boolean)
  * @param voteActions  투표 저장 로직 (최재성 담당). 기본값은 가짜
  * @param markers      체크인·체크아웃 시각 (파란 선)
  * @param now          현재 시각 표시선 위치 (빨간 선). null 이면 표시하지 않음
- * @param onInviteClick 상단 `+` → 초대 모달 연결 지점
+ * @param memberRepository 동행자 저장소 (상단 프로필 줄 + 친구 초대 모달)
+ * @param onInviteClick 상단 `+` 를 눌렀을 때 추가로 할 일. 친구 초대 모달은 이것과 상관없이 항상 뜬다
  * @param onHomeClick  오른쪽 위 집 버튼 → 메인(방 만들기). null 이면 버튼 숨김
  */
 @Composable
@@ -72,14 +95,26 @@ fun TimelineScreen(
     tripId: String = FakeBlocks.TRIP_ID,
     repository: BlockRepository = TimelineDependencies.blockRepository,
     voteActions: VoteActions = TimelineDependencies.voteActions,
-    members: List<Member> = FakeBlocks.members,
+    memberRepository: MemberRepository = TimelineDependencies.memberRepository,
     tripStart: LocalDate = FakeBlocks.TRIP_START,
     tripEnd: LocalDate = FakeBlocks.TRIP_END,
     markers: List<TimeMarker> = FakeBlocks.markers,
     now: LocalTime? = null,
-    onInviteClick: () -> Unit = {},
+    onInviteClick: (() -> Unit)? = null,
     onHomeClick: (() -> Unit)? = null,
+    /** 오른쪽 위 🔔 → 알림 모아보기. null 이면 버튼 숨김 */
+    onNotificationsClick: (() -> Unit)? = null,
 ) {
+    val unreadNotifications by remember { NotificationDependencies.repository.unreadCount() }
+        .collectAsState(initial = 0)
+    val members by remember(memberRepository, tripId) { memberRepository.observeMembers(tripId) }
+        .collectAsState(initial = emptyList())
+    val screenScope = rememberCoroutineScope()
+
+    // trips/{tripId} 문서 (목적지·기간) 를 데이터 구조 문서대로 저장
+    LaunchedEffect(tripId, tripStart, tripEnd) {
+        runCatching { TimelineDependencies.tripRepository.saveTrip(tripId, TripSession.destination, tripStart, tripEnd) }
+    }
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
         factory = TimelineViewModel.factory(repository, tripId),
@@ -102,10 +137,33 @@ fun TimelineScreen(
         onUpdate = vm::update,
         onDelete = vm::delete,
         onMove = vm::move,
-        onSeed = vm::seedFakeData,
-        onInviteClick = onInviteClick,
+        onSeed = {
+            vm.seedFakeData(tripStart, tripEnd)
+            // 가짜 일정과 함께 가짜 동행자 3명도 members 에 넣는다
+            screenScope.launch { runCatching { memberRepository.invite(tripId, FakeBlocks.members) } }
+        },
+        onToggleTodo = vm::toggleTodo,
+        onRequestDelete = vm::markDeleteRequested,
+        onProposeEdit = vm::proposeEdit,
+        onCancelDeleteRequest = vm::cancelDeleteRequest,
+        onDeleteProposed = vm::deleteProposed,
+        onInviteClick = onInviteClick ?: {},
         onHomeClick = onHomeClick,
+        onNotificationsClick = onNotificationsClick,
+        unreadNotifications = unreadNotifications,
+        onInvited = { added ->
+            screenScope.launch { snackbar.showSnackbar(added.joinToString(", ") { it.nickname } + " 님을 초대했어요.") }
+        },
+        memberRepository = memberRepository,
+        onRemoveMember = { m ->
+            screenScope.launch {
+                runCatching { memberRepository.remove(tripId, m.userId) }
+                    .onSuccess { snackbar.showSnackbar("${m.nickname} 님을 내보냈어요.") }
+                    .onFailure { snackbar.showSnackbar("내보내지 못했어요: ${it.message}") }
+            }
+        },
     )
+
 }
 
 /**
@@ -129,7 +187,17 @@ internal fun TimelineContent(
     onMove: (blockId: String, requestedStartMinutes: Int, window: IntRange) -> EditResult,
     onSeed: () -> Unit,
     onInviteClick: () -> Unit,
+    onToggleTodo: (blockId: String, lineIndex: Int) -> Unit = { _, _ -> },
+    onRequestDelete: (blockId: String) -> EditResult = { EditResult.Error("삭제 제안을 할 수 없어요.") },
+    onProposeEdit: (original: Block, edited: Block) -> EditResult = { _, _ -> EditResult.Error("수정 제안을 할 수 없어요.") },
+    onCancelDeleteRequest: (blockId: String) -> EditResult = { EditResult.Error("취소할 수 없어요.") },
+    onDeleteProposed: (blockId: String) -> EditResult = { EditResult.Error("삭제할 수 없어요.") },
     onHomeClick: (() -> Unit)? = null,
+    onNotificationsClick: (() -> Unit)? = null,
+    unreadNotifications: Int = 0,
+    onRemoveMember: ((Member) -> Unit)? = null,
+    memberRepository: MemberRepository = TimelineDependencies.memberRepository,
+    onInvited: ((List<Member>) -> Unit)? = null,
 ) {
     val list = blocks.orEmpty()
     val dates = remember(tripStart, tripEnd) { tripDates(tripStart, tripEnd) }
@@ -143,13 +211,39 @@ internal fun TimelineContent(
     val scope = rememberCoroutineScope()
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
+    // 일정표를 맨 위까지 올리면 프로필 크게, 내리면 기본 크기
+    val gridScroll = rememberScrollState()
+    val atTop by remember { derivedStateOf { gridScroll.value < 24 } }
+    val avatarSize by animateDpAsState(if (atTop) 56.dp else 44.dp, label = "avatarSize")
+    LaunchedEffect(selectedIndex) { gridScroll.scrollTo(0) } // 날짜 바꾸면 맨 위부터
+
+    // 알림에서 "이 블록 보여줘" → 그 날짜로 바꾸고 3.5초 동안 강조
+    val focusRequest by TimelineFocus.request.collectAsState()
+    var highlightId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(focusRequest, list) {
+        val id = focusRequest ?: return@LaunchedEffect
+        val target = list.firstOrNull { it.id == id } ?: return@LaunchedEffect // 블록이 아직 안 불러와졌으면 기다림
+        val dayIndex = dates.indexOf(target.date)
+        if (dayIndex >= 0) selectedIndex = dayIndex
+        highlightId = id
+        TimelineFocus.consume()
+        delay(3500)
+        highlightId = null
+    }
+
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick, onHomeClick)
+            MemberBar(
+                members, onInviteClick, onHomeClick, onRemoveMember, tripId, memberRepository, onInvited, avatarSize,
+                onNotificationsClick, unreadNotifications,
+            )
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
+            // 일차 탭 ↔ 비율 구분선
+            HorizontalDivider(color = Color(0xFFE0E0E0))
 
             val dayBlocks = list.filter { it.date == selectedDate }.sortedBy { it.start }
+            KindRatioBar(dayBlocks, list, GroupRatio.of(members.map { it.jpScore }))
             DayTimelineGrid(
                 dayBlocks = dayBlocks,
                 markers = markers.filter { it.date == selectedDate },
@@ -167,6 +261,10 @@ internal fun TimelineContent(
                     }
                 },
                 modifier = Modifier.weight(1f),
+                scrollState = gridScroll,
+                highlightId = highlightId,
+                // 카드 안 할 일 동그라미 → 그 줄만 [ ] ↔ [x]
+                onToggleTodo = { block, line -> onToggleTodo(block.id, line) },
             )
         }
 
@@ -231,6 +329,49 @@ internal fun TimelineContent(
                 editor = null
                 voting = st.block
             },
+            onToggleTodo = { line -> onToggleTodo(st.block.id, line) },
+            onProposeDelete = { reason ->
+                when (val r = onRequestDelete(st.block.id)) {
+                    is EditResult.Ok -> {
+                        editor = null
+                        postProposalNotification(NotificationType.DELETE_PROPOSAL, "삭제 제안", "'${st.block.displayTitle}' 삭제가 제안됐어요 · \"$reason\"", st.block)
+                        scope.launch {
+                            voteActions.proposeDelete(tripId, st.block.id, reason)
+                                .onSuccess { snackbar.showSnackbar("삭제를 제안했어요. 동행자 의견을 기다려요.") }
+                                .onFailure { snackbar.showSnackbar("삭제 제안을 보내지 못했어요: ${it.message}") }
+                        }
+                    }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
+            onProposeEdit = { edited ->
+                val before = st.block
+                when (val r = onProposeEdit(before, edited)) {
+                    is EditResult.Ok -> {
+                        editor = null
+                        val summary = editSummary(before, edited)
+                        postProposalNotification(NotificationType.VOTE_REQUEST, "수정 제안 · 투표해 주세요", "'${edited.displayTitle}' $summary", edited)
+                        scope.launch {
+                            voteActions.proposeEdit(tripId, before.id, summary)
+                                .onSuccess { snackbar.showSnackbar("수정을 제안했어요. 다시 투표에 올라갔어요.") }
+                                .onFailure { snackbar.showSnackbar("수정 제안을 보내지 못했어요: ${it.message}") }
+                        }
+                    }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
+            onCancelDeleteRequest = {
+                when (val r = onCancelDeleteRequest(st.block.id)) {
+                    is EditResult.Ok -> { editor = null; toast("삭제 제안을 취소했어요.") }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
+            onDeleteProposed = {
+                when (val r = onDeleteProposed(st.block.id)) {
+                    is EditResult.Ok -> { editor = null; toast("'${st.block.displayTitle}' 일정을 삭제했어요.") }
+                    is EditResult.Error -> toast(r.message)
+                }
+            },
         )
     }
 
@@ -257,12 +398,31 @@ internal fun TimelineContent(
 
 /** 맨 위: [+](프로필 사진들) ………… ⌂ 메인으로 (onHomeClick 이 null 이면 집 버튼 숨김) */
 @Composable
-private fun MemberBar(members: List<Member>, onInviteClick: () -> Unit, onHomeClick: (() -> Unit)?) {
+private fun MemberBar(
+    members: List<Member>,
+    onInviteClick: () -> Unit,
+    onHomeClick: (() -> Unit)?,
+    onRemoveMember: ((Member) -> Unit)?,
+    tripId: String,
+    memberRepository: MemberRepository,
+    onInvited: ((List<Member>) -> Unit)?,
+    avatarSize: Dp,
+    onNotificationsClick: (() -> Unit)?,
+    unreadNotifications: Int,
+) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MemberRow(members, onInviteClick, Modifier.weight(1f))
+        MemberRow(
+            members, onInviteClick, Modifier.weight(1f),
+            onRemoveMember = onRemoveMember,
+            tripId = tripId,
+            memberRepository = memberRepository,
+            onInvited = onInvited,
+            avatarSize = avatarSize,
+        )
+        if (onNotificationsClick != null) BellButton(onNotificationsClick, unread = unreadNotifications)
         if (onHomeClick != null) HomeButton(onHomeClick)
     }
 }
@@ -306,11 +466,12 @@ private fun KindChooserDialog(onDismiss: () -> Unit, onChoose: (BlockKind) -> Un
         onDismissRequest = onDismiss,
         title = { Text("어떤 블록을 추가할까요?", fontSize = 18.sp) },
         text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                KindOption("확정 블록", "시간·장소·할 일을 정해요\n'제안됨'으로 시작", TimelineColors.Fixed, Modifier.weight(1f)) {
+            // 가로로 꽉 찬 버튼을 위아래로
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                KindOption("확정 블록", "시간·장소·할 일을 정해요 · '제안됨'으로 시작", TimelineColors.Fixed, Modifier.fillMaxWidth()) {
                     onChoose(BlockKind.FIXED)
                 }
-                KindOption("자유 블록", "메모만 남겨요\n비워두면 빈칸", TimelineColors.Free, Modifier.weight(1f)) {
+                KindOption("자유 블록", "메모만 남겨요 · 비워두면 빈칸", TimelineColors.Free, Modifier.fillMaxWidth()) {
                     onChoose(BlockKind.FREE)
                 }
             }
@@ -329,11 +490,177 @@ private fun KindOption(title: String, desc: String, color: Color, modifier: Modi
             .background(color)
             .border(1.dp, TimelineColors.Border, shape)
             .clickable(onClick = onClick)
-            .padding(12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.Black)
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
         Text(desc, fontSize = 12.sp, color = Color(0xFF424242))
+    }
+}
+
+/* ───────────────────────── 제안 알림 ───────────────────────── */
+
+/** 삭제·수정 제안을 알림 모아보기에도 남긴다 (지금은 이 폰에만. Firestore 알림은 다음 단계) */
+private fun postProposalNotification(type: NotificationType, title: String, body: String, block: Block) {
+    NotificationDependencies.repository.post(
+        AppNotification(
+            id = "p_${block.id}_${System.currentTimeMillis()}",
+            type = type,
+            title = title,
+            body = body,
+            createdAt = LocalDateTime.now(),
+            tripId = block.tripId,
+            blockId = block.id,
+        ),
+    )
+}
+
+/** 무엇을 바꿨는지 한 줄: "시간 10:30~12:30 → 11:00~13:00 · 장소 A → B" */
+private fun editSummary(before: Block, after: Block): String {
+    val parts = buildList {
+        if (before.start != after.start || before.end != after.end) add("시간 ${before.timeText()} → ${after.timeText()}")
+        if (before.place != after.place) add("장소 ${before.place ?: "없음"} → ${after.place ?: "없음"}")
+        if (before.title != after.title) add("제목 변경")
+        if (before.memo != after.memo || before.todo != after.todo) add("메모·할 일 변경")
+        if (before.tags != after.tags) add("태그 변경")
+    }
+    return if (parts.isEmpty()) "내용 수정 제안" else parts.joinToString(" · ")
+}
+
+/* ───────────────────────── 확정 · 자유 비율 ───────────────────────── */
+
+/**
+ * 날짜 탭 아래: 이 날 확정 블록과 자유 블록이 시간으로 몇 % 씩인지. 오른쪽 아래 ▾/▴ 로 접고 펴기.
+ *
+ *  펼침:  ● 확정 62%  ● 자유 38%          여행 전체 확정 55%
+ *         [■■■■■■■■■■■■□□□□□□□]
+ *                                              ▴
+ *  접힘:  확정 62% · 자유 38%                  ▾
+ *
+ * 이동 블록은 계산에서 뺀다.
+ */
+@Composable
+private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recommended: GroupRatio? = null) {
+    fun minutesOf(bs: List<Block>, k: BlockKind) = bs.filter { it.kind == k }.sumOf { it.durationMinutes }
+    val fixed = minutesOf(dayBlocks, BlockKind.FIXED)
+    val free = minutesOf(dayBlocks, BlockKind.FREE)
+    val total = fixed + free
+    val tripFixed = minutesOf(allBlocks, BlockKind.FIXED)
+    val tripTotal = tripFixed + minutesOf(allBlocks, BlockKind.FREE)
+    val fixedPct = if (total == 0) 0 else (fixed * 100f / total).roundToInt()
+    val freePct = if (total == 0) 0 else 100 - fixedPct
+
+    var expanded by rememberSaveable { mutableStateOf(true) }
+    val arrowTurn by animateFloatAsState(if (expanded) 180f else 0f, label = "arrow")
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFAFAFA))
+            .animateContentSize()
+            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 2.dp),
+    ) {
+        if (expanded) {
+            if (total == 0) {
+                Text("이 날은 아직 확정·자유 블록이 없어요.", fontSize = 12.sp, color = TimelineColors.SubText)
+            } else {
+                val animated by animateFloatAsState(fixed.toFloat() / total, label = "ratio")
+                Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RatioLegend(TimelineColors.Fixed, "확정 $fixedPct%")
+                    Spacer(Modifier.width(10.dp))
+                    RatioLegend(TimelineColors.Free, "자유 $freePct%")
+                    Spacer(Modifier.weight(1f))
+                    if (tripTotal > 0) {
+                        Text(
+                            "여행 전체 확정 ${(tripFixed * 100f / tripTotal).roundToInt()}%",
+                            fontSize = 11.sp, color = TimelineColors.SubText,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.padding(end = 8.dp).fillMaxWidth().height(14.dp), contentAlignment = Alignment.CenterStart) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(TimelineColors.Free),
+                    ) {
+                        if (animated > 0f) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(animated.coerceIn(0f, 1f))
+                                    .fillMaxHeight()
+                                    .background(TimelineColors.FixedDash),
+                            )
+                        }
+                    }
+                    // 적정 비율 위치 = 검은 세로 눈금
+                    if (recommended != null) {
+                        BoxWithConstraints(Modifier.fillMaxWidth().height(14.dp)) {
+                            val x = (maxWidth - 2.dp) * (recommended.fixedPercent / 100f)
+                            Box(
+                                Modifier
+                                    .offset(x = x)
+                                    .width(2.dp)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(1.dp))
+                                    .background(Color(0xFF1E1E1E)),
+                            )
+                        }
+                    }
+                }
+                if (recommended != null) {
+                    val diff = fixedPct - recommended.fixedPercent
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "▎적정 확정 ${recommended.fixedPercent}% · 자유 ${recommended.freePercent}%  " + when {
+                            diff >= 10 -> "· 확정이 조금 많아요"
+                            diff <= -10 -> "· 자유가 조금 많아요"
+                            else -> "· 딱 좋아요"
+                        },
+                        fontSize = 11.sp,
+                        color = if (kotlin.math.abs(diff) >= 10) Color(0xFFE65100) else TimelineColors.SubText,
+                    )
+                }
+            }
+        }
+
+        // 오른쪽 아래 화살표 (접혀 있을 땐 왼쪽에 한 줄 요약)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (!expanded) {
+                Text(
+                    if (total == 0) "확정·자유 블록 없음" else "확정 $fixedPct% · 자유 $freePct%",
+                    fontSize = 12.sp, color = TimelineColors.SubText,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .clickable { expanded = !expanded },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "▾",
+                    fontSize = 16.sp,
+                    color = TimelineColors.SubText,
+                    modifier = Modifier.rotate(arrowTurn),
+                )
+            }
+        }
+    }
+    // 아래 일정표와 확실히 구분
+    HorizontalDivider(color = Color(0xFFE0E0E0))
+}
+
+@Composable
+private fun RatioLegend(color: Color, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(color).border(1.dp, TimelineColors.Border, CircleShape))
+        Spacer(Modifier.width(4.dp))
+        Text(text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 

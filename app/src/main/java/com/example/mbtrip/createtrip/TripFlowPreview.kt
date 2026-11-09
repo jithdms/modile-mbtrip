@@ -17,8 +17,8 @@ import com.example.mbtrip.timeline.ui.TimelineScreen
 @Composable
 fun TripFlowPreview() {
     var onTimeline by remember { mutableStateOf(false) }
-
     if (!onTimeline) {
+        // 위쪽 `+`·프로필은 MemberRow 가 알아서 친구 초대·정보 카드를 띄운다
         TripSetupScreen(
             onBack = {}, // 방 만들기(메인)는 다른 팀원 화면 → main 에서 NavGraph 로 연결됨
             onSave = { setup ->

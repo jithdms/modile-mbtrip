@@ -47,9 +47,9 @@ object FakeBlocks {
     )
 
     val members = listOf(
-        Member("u_minji", "민지", "@minji_j", jpScore = 18),
-        Member("u_junho", "준호", "@junho_p", jpScore = 72),
-        Member("u_seoyeon", "서연", "@seoyeon", jpScore = 55), // 와이어프레임 아바타 3개에 맞춘 가상 인물
+        Member("u_minji", "민지", "@minji_j", jpScore = 18, bio = "엑셀로 여행 계획 짜는 사람"),
+        Member("u_junho", "준호", "@junho_p", jpScore = 72, bio = "발길 닿는 대로 🚶"),
+        Member("u_seoyeon", "서연", "@seoyeon", jpScore = 45, bio = "바다랑 일몰 좋아해요"), // 와이어프레임 아바타 3개에 맞춘 가상 인물
     )
 
     private val SURF_TODO = """
@@ -59,6 +59,14 @@ object FakeBlocks {
         - [ ] 수건
         - **10:20까지** 입장
     """.trimIndent()
+
+    /** 가짜 일정 장소의 대략 좌표 (예시값) — 에뮬레이터에서 검색이 안 돼도 지도에 핀이 보이게 */
+    private val PLACE_COORDS: Map<String, Pair<Double, Double>> = mapOf(
+        "시흥 웨이브파크" to (37.3196 to 126.6835),
+        "오이도 갯벌" to (37.3456 to 126.6880),
+        "거북섬 해안" to (37.3165 to 126.6760),
+        "거북섬 상권" to (37.3190 to 126.6800),
+    )
 
     val blocks: List<Block> = listOf(
         // ───────── Day 1 ─────────
@@ -108,5 +116,7 @@ object FakeBlocks {
         id = id, tripId = TRIP_ID, date = date, start = t(start), end = t(end),
         kind = FIXED, status = status, source = source,
         title = title, place = place, locked = locked, tags = tags, memo = memo, todo = todo,
+        lat = place?.let { PLACE_COORDS[it]?.first }, lng = place?.let { PLACE_COORDS[it]?.second },
     )
+
 }

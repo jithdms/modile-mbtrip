@@ -69,13 +69,15 @@ private val ErrorRed = Color(0xFFD32F2F)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripSetupScreen(
-    members: List<Member> = FakeBlocks.members,
+    /** null 이면 동행자 저장소에서 직접 읽는다 (초대·내보내기가 바로 보임) */
+    members: List<Member>? = null,
     tripStart: LocalDate? = null,
     tripEnd: LocalDate? = null,
     initial: TripSetup = TripSetupStore.current
         ?: TripSetup(dayTrip = tripStart != null && tripStart == tripEnd),
     onBack: () -> Unit = {},
     onInviteClick: () -> Unit = {},
+    onRemoveMember: ((Member) -> Unit)? = null,
     onSave: (TripSetup) -> Unit = {},
 ) {
     var setup by remember { mutableStateOf(initial) }
@@ -103,7 +105,10 @@ fun TripSetupScreen(
 
     Column(Modifier.fillMaxSize().background(Color.White)) {
         // ── 맨 위: 프로필 줄 ──
-        MemberRow(members, onInviteClick, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp))
+        MemberRow(
+            members, onInviteClick, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            onRemoveMember = onRemoveMember,
+        )
         HorizontalDivider()
 
         Column(

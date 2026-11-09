@@ -1,5 +1,6 @@
 package com.example.mbtrip.ui.component
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,15 +22,32 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import androidx.compose.ui.res.painterResource
-import com.example.mbtrip.R
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun TripExampleScreen(
     onNavigateBack: () -> Unit = {},
-    onNavigateNext: () -> Unit = {}
+    onNavigateNext: () -> Unit = {},
+    /**
+     * [생성하기] 때 입력값을 넘겨받는 곳 (지소은: 새 여행 만들기).
+     * 문제가 있으면 안내 문구를 돌려주고, 그때는 다음 화면으로 안 넘어간다.
+     * dateRange 는 "2026.10.01 ~ 2026.10.03" 모양, headcount 는 "3명".
+     */
+    onCreateTrip: ((departure: String, arrival: String, dateRange: String, headcount: String) -> String?)? = null,
+    /** [초대코드로 참여하기] — null 이면 버튼 숨김 */
+    onJoinWithCode: (() -> Unit)? = null,
+    // 하단 바: 메뉴(여행 기록) · 알림 · 그룹(친구) · 마이페이지
+    onMenuClick: () -> Unit = {},
+    onNotificationsClick: () -> Unit = {},
+    onFriendsClick: () -> Unit = {},
+    onMyPageClick: () -> Unit = {},
+    /** 안 읽은 알림이 있으면 알림 아이콘에 빨간 점 */
+    hasUnreadNotifications: Boolean = false,
 ) {
-    var departure by remember { mutableStateOf("학교") }
-    var arrival by remember { mutableStateOf("집") }
+    val context = LocalContext.current
+    // 도착 = 여행 목적지로 저장된다 (시흥 여행 앱이라 기본값을 시흥으로)
+    var departure by remember { mutableStateOf("서울") }
+    var arrival by remember { mutableStateOf("시흥") }
 
     // 출발일 및 도착일 상태 관리
     val dateFormatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
@@ -81,33 +99,20 @@ fun TripExampleScreen(
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { /* TODO: 메뉴 화면 이동 */ }) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.menu_burger),
-                            contentDescription = "메뉴",
-                            modifier = Modifier.size(24.dp)
-                        )
+                    IconButton(onClick = onMenuClick) {
+                        BarIcon("menu_burger", "☰", "메뉴")
                     }
-                    IconButton(onClick = { /* TODO: 알림 화면 이동 */ }) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.bell),
-                            contentDescription = "알림",
-                            modifier = Modifier.size(24.dp)
-                        )
+                    IconButton(onClick = onNotificationsClick) {
+                        // 안 읽은 알림이 있으면 오른쪽 위 빨간 점
+                        BadgedBox(badge = { if (hasUnreadNotifications) Badge() }) {
+                            BarIcon("bell", "🔔", if (hasUnreadNotifications) "알림, 안 읽은 알림 있음" else "알림")
+                        }
                     }
-                    IconButton(onClick = { /* TODO: 그룹 화면 이동 */ }) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.users_alt),
-                            contentDescription = "그룹",
-                            modifier = Modifier.size(24.dp)
-                        )
+                    IconButton(onClick = onFriendsClick) {
+                        BarIcon("users_alt", "👥", "그룹")
                     }
-                    IconButton(onClick = { /* TODO: 마이페이지 이동 */ }) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.user),
-                            contentDescription = "마이페이지",
-                            modifier = Modifier.size(24.dp)
-                        )
+                    IconButton(onClick = onMyPageClick) {
+                        BarIcon("user", "👤", "마이페이지")
                     }
                 }
             }
@@ -274,12 +279,29 @@ fun TripExampleScreen(
                 }
             }
 
-            MBTripButton(
-                text = "생성하기",
-                onClick = onNavigateNext,
-                isPrimary = true,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            // 생성하기 + 초대코드로 참여하기 (한 덩어리로 맨 아래에)
+            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                MBTripButton(
+                    text = "생성하기",
+                    onClick = {
+                        val range = "${startDate.format(dateFormatter)} ~ ${endDate.format(dateFormatter)}"
+                        val problem = onCreateTrip?.invoke(departure, arrival, range, "${headcountNumber}명")
+                        if (problem != null) {
+                            Toast.makeText(context, problem, Toast.LENGTH_SHORT).show()
+                        } else {
+                            onNavigateNext()
+                        }
+                    },
+                    isPrimary = true,
+                    modifier = Modifier.padding(bottom = if (onJoinWithCode != null) 4.dp else 16.dp)
+                )
+                if (onJoinWithCode != null) {
+                    TextButton(
+                        onClick = onJoinWithCode,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    ) { Text("초대코드로 참여하기") }
+                }
+            }
         }
     }
 
@@ -406,5 +428,19 @@ fun TripExampleScreen(
                 }
             }
         )
+    }
+}
+/**
+ * 하단 바 아이콘. res/drawable 에 그림(name)이 있으면 그 그림, 없으면 이모지(fallback).
+ * 그림 파일을 이름으로 찾아서, 파일이 아직 없어도 빌드가 깨지지 않는다.
+ */
+@Composable
+private fun BarIcon(name: String, fallback: String, contentDescription: String) {
+    val context = LocalContext.current
+    val resId = remember(name) { context.resources.getIdentifier(name, "drawable", context.packageName) }
+    if (resId != 0) {
+        Icon(painter = painterResource(id = resId), contentDescription = contentDescription, modifier = Modifier.size(24.dp))
+    } else {
+        Text(fallback, fontSize = 20.sp)
     }
 }

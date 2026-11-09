@@ -141,6 +141,59 @@ internal fun updateBlock(blocks: List<Block>, original: Block, edited: Block): E
     return EditResult.Ok(blocks.map { if (it.id == b.id) b else it })
 }
 
+/**
+ * 할 일 체크만 바꾸기 — 잠긴·확정 블록도 체크는 할 수 있다 (일정 자체는 안 바뀜).
+ * 상태(확정·제안됨)는 그대로 둔다.
+ */
+internal fun toggleTodoInBlock(blocks: List<Block>, id: String, lineIndex: Int): EditResult {
+    val b = blocks.firstOrNull { it.id == id } ?: return EditResult.Error("블록을 찾을 수 없어요.")
+    val updated = b.copy(todo = toggleCheck(b.todo, lineIndex), version = b.version + 1)
+    return EditResult.Ok(blocks.map { if (it.id == id) updated else it })
+}
+
+/**
+ * 삭제 제안 — 확정·잠긴 블록은 바로 지우지 않고 '삭제 제안' 표시만 단다.
+ * 실제 삭제 여부는 투표 로직(VoteActions.proposeDelete)이 정한다.
+ */
+internal fun requestDelete(blocks: List<Block>, id: String): EditResult {
+    val b = blocks.firstOrNull { it.id == id } ?: return EditResult.Error("블록을 찾을 수 없어요.")
+    if (b.deleteRequested) return EditResult.Error("이미 삭제 제안된 블록이에요.")
+    val updated = b.copy(deleteRequested = true, version = b.version + 1)
+    return EditResult.Ok(blocks.map { if (it.id == id) updated else it })
+}
+
+/**
+ * 수정 제안 — 확정·잠긴 블록을 고친 내용으로 바꾸고 '제안됨'으로 되돌려 다시 투표에 올린다.
+ * (잠금도 풀린다. 자유·이동 블록은 원래 규칙대로 확정 상태 유지)
+ */
+internal fun proposeEdit(blocks: List<Block>, original: Block, edited: Block): EditResult {
+    validate(blocks, edited)?.let { return EditResult.Error(it) }
+    val updated = edited.copy(
+        status = if (edited.kind == BlockKind.FIXED) BlockStatus.PROPOSED else BlockStatus.CONFIRMED,
+        locked = false,
+        deleteRequested = false,
+        version = original.version + 1,
+    )
+    return EditResult.Ok(blocks.map { if (it.id == original.id) updated else it })
+}
+
+/** 삭제 제안 취소 */
+internal fun cancelDeleteRequest(blocks: List<Block>, id: String): EditResult {
+    val b = blocks.firstOrNull { it.id == id } ?: return EditResult.Error("블록을 찾을 수 없어요.")
+    val updated = b.copy(deleteRequested = false, version = b.version + 1)
+    return EditResult.Ok(blocks.map { if (it.id == id) updated else it })
+}
+
+/** 삭제 제안이 받아들여진 뒤 실제로 지우기 (잠긴 블록도 지울 수 있음) */
+internal fun deleteProposed(blocks: List<Block>, id: String): EditResult {
+    val b = blocks.firstOrNull { it.id == id } ?: return EditResult.Error("블록을 찾을 수 없어요.")
+    if (!b.deleteRequested) return EditResult.Error("먼저 삭제 제안을 해야 해요.")
+    return EditResult.Ok(blocks.filterNot { it.id == id })
+}
+
+/** 확정됐거나 잠긴 블록은 바로 삭제 대신 '삭제 제안' 을 한다 */
+internal fun Block.needsDeleteProposal(): Boolean = locked || (kind == BlockKind.FIXED && status == BlockStatus.CONFIRMED)
+
 internal fun deleteBlock(blocks: List<Block>, id: String): EditResult {
     val target = blocks.firstOrNull { it.id == id } ?: return EditResult.Error("블록을 찾을 수 없어요.")
     if (target.locked) return EditResult.Error("잠긴 블록은 삭제할 수 없어요.")

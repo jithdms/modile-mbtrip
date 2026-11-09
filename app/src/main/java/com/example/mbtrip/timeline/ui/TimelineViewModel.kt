@@ -1,5 +1,7 @@
 package com.example.mbtrip.timeline.ui
 
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -78,10 +80,57 @@ class TimelineViewModel(
         return r
     }
 
+    /** 카드·모달의 할 일 동그라미 — 잠긴 블록도 체크 가능 */
+    fun toggleTodo(blockId: String, lineIndex: Int) {
+        val r = toggleTodoInBlock(current, blockId, lineIndex)
+        if (r is EditResult.Ok) save(r.blocks.first { it.id == blockId })
+        else if (r is EditResult.Error) _messages.tryEmit(r.message)
+    }
+
+    /** 삭제 제안 표시 저장 (투표 쪽 알림은 화면에서 VoteActions 로 보낸다) */
+    fun markDeleteRequested(blockId: String): EditResult {
+        val r = requestDelete(current, blockId)
+        if (r is EditResult.Ok) save(r.blocks.first { it.id == blockId })
+        return r
+    }
+
+    /** 확정·잠긴 블록 수정 제안 → 고친 내용 저장 + '제안됨' 으로 */
+    fun proposeEdit(original: Block, edited: Block): EditResult {
+        val r = com.example.mbtrip.timeline.ui.proposeEdit(current, original, edited)
+        if (r is EditResult.Ok) save(r.blocks.first { it.id == original.id })
+        return r
+    }
+
+    fun cancelDeleteRequest(blockId: String): EditResult {
+        val r = com.example.mbtrip.timeline.ui.cancelDeleteRequest(current, blockId)
+        if (r is EditResult.Ok) save(r.blocks.first { it.id == blockId })
+        return r
+    }
+
+    /** 삭제 제안된 블록을 실제로 지운다 */
+    fun deleteProposed(blockId: String): EditResult {
+        val r = com.example.mbtrip.timeline.ui.deleteProposed(current, blockId)
+        if (r is EditResult.Ok) {
+            viewModelScope.launch {
+                runCatching { repository.delete(tripId, blockId) }
+                    .onFailure { _messages.tryEmit("삭제하지 못했어요: ${it.message}") }
+            }
+        }
+        return r
+    }
+
     /** 테스트용: 빈 여행에 거북섬 1박 가짜 일정을 넣는다 (Firestore 처음 연결했을 때 확인용) */
-    fun seedFakeData() {
+    /**
+     * 가짜 일정을 이 여행 날짜로 옮겨서 넣는다 (거북섬 1박 예시의 1일차 → 여행 첫날).
+     * 여행 기간을 넘어가는 날의 블록은 넣지 않는다.
+     */
+    fun seedFakeData(tripStart: LocalDate = FakeBlocks.TRIP_START, tripEnd: LocalDate = FakeBlocks.TRIP_END) {
+        val shift = ChronoUnit.DAYS.between(FakeBlocks.TRIP_START, tripStart)
+        val shifted = FakeBlocks.blocks
+            .map { it.copy(tripId = tripId, date = it.date.plusDays(shift)) }
+            .filter { !it.date.isAfter(tripEnd) }
         viewModelScope.launch {
-            runCatching { FakeBlocks.blocks.forEach { repository.upsert(it.copy(tripId = tripId)) } }
+            runCatching { shifted.forEach { repository.upsert(it) } }
                 .onSuccess { _messages.tryEmit("가짜 일정을 넣었어요.") }
                 .onFailure { _messages.tryEmit("가짜 일정을 넣지 못했어요: ${it.message}") }
         }

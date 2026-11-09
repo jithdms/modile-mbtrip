@@ -1,9 +1,16 @@
+import java.util.Properties
+
+// 지도 키: 프로젝트 맨 위 local.properties 에  VWORLD_KEY=발급받은키  한 줄 추가 (git 에 안 올라감)
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    //alias(libs.plugins.google.services)
+    alias(libs.plugins.google.services)
 }
-
 android {
     namespace = "com.example.mbtrip"
     compileSdk {
@@ -20,6 +27,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "VWORLD_KEY", "\"${localProps.getProperty("VWORLD_KEY", "")}\"")
     }
 
     buildTypes {
@@ -37,6 +46,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -49,12 +59,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended) // 추가: 아이콘 (1주차 main에 있던 것)
-    implementation(libs.androidx.navigation.compose)              // 추가: 화면 이동 ← 이번 오류 원인
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.auth)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -62,5 +66,14 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.auth)
+    implementation(libs.androidx.navigation.compose)
+    // 여행 모임 로그 XML 화면(activity_trip_log_detail.xml)이 CardView 를 씀
+    implementation("androidx.cardview:cardview:1.0.0")
+    // 일정 모달 지도 (OpenStreetMap · API 키 필요 없음)
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }

@@ -2,8 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Firebase를 쓰지 않는다면 인터넷 권한도 필요 없습니다 (필요시 주석 해제) -->
-    <!-- <uses-permission android:name="android.permission.INTERNET" /> -->
+    <!-- 지도 타일 내려받기 (일정 모달) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"
@@ -18,8 +19,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.MBTrip"
-            android:windowSoftInputMode="adjustResize">
+            android:theme="@style/Theme.MBTrip">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

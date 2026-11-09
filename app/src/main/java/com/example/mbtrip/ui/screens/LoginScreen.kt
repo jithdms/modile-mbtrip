@@ -145,7 +145,8 @@ fun LoginScreen(navController: NavController) {
                     if (isLoginMode) {
                         // 로그인 성공 시 홈 화면으로 이동
                         Toast.makeText(context, "로그인 성공!", Toast.LENGTH_SHORT).show()
-                        navController.navigate(Screen.Home.route) {
+                        // 로그인 뒤: 처음이면 J/P 진단 → 방 만들기, 진단을 했으면 바로 방 만들기
+                        navController.navigate(Screen.AfterLogin.route) {
                             popUpTo(Screen.Landing.route) { inclusive = false }
                         }
                     } else {
