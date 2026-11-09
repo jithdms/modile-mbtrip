@@ -20,7 +20,6 @@ class DiagnosisView @JvmOverloads constructor(
 
     private val selectedAnswers = mutableMapOf<Int, DiagnosisChoice>()
     private var displayName: String = "나"
-    private var companions: List<CompanionMember> = emptyList()
     private var onContinue: (() -> Unit)? = null
     private var onResult: ((DiagnosisResult) -> Unit)? = null
 
@@ -47,12 +46,10 @@ class DiagnosisView @JvmOverloads constructor(
 
     fun configure(
         displayName: String,
-        companions: List<CompanionMember>,
         onContinue: (() -> Unit)? = null,
         onResult: ((DiagnosisResult) -> Unit)? = null
     ) {
         this.displayName = displayName.ifBlank { "나" }
-        this.companions = companions
         this.onContinue = onContinue
         this.onResult = onResult
         findViewById<Button>(R.id.continueButton).visibility =
