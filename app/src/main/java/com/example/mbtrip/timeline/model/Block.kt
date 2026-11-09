@@ -112,7 +112,7 @@ data class Member(
     val userId: String,
     val nickname: String,
     val handle: String,
-    val jpScore: Int, // 0(P) ~ 100(J)
-    /** 프로필 사진 주소. null = 사진 등록 안 함 → 기본 사진(고양이) */
-    val photoUrl: String? = null,
+    val jpScore: Int, // 0(J) ~ 100(P), Firestore convention
+    /** UI enrichment derived from the associated Trip dates; not stored on Member. */
+    val isTraveling: Boolean = false,
 )

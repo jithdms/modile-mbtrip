@@ -1,7 +1,9 @@
 package com.example.mbtrip.diagnosis
 
-/** Firebase를 사용하지 않도록 수정된 가짜(Fake) Member 문서 저장소입니다. */
-class MemberRepository {
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.tasks.await
 
     suspend fun saveJpScore(tripId: String, jpScore: Int): String {
         require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
@@ -16,6 +18,25 @@ class MemberRepository {
         require(userId.isNotBlank()) { "로그인 사용자 정보가 필요해요." }
         require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
         require(jpScore in 0..100)
-        // 파이어베이스 통신 없이 아무 동작도 하지 않거나, 로컬에 저장하는 로직으로 대체할 수 있습니다.
+        firestore.collection("trips")
+            .document(tripId)
+            .collection("members")
+            .document(userId)
+            .set(
+                mapOf("userId" to userId, "tripId" to tripId, "jpScore" to jpScore),
+                SetOptions.merge(),
+            ).await()
+    }
+
+    /** Removes a member from one trip's participant list. */
+    suspend fun removeMember(tripId: String, userId: String) {
+        require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
+        require(userId.isNotBlank()) { "삭제할 사용자 정보가 필요해요." }
+        firestore.collection("trips")
+            .document(tripId)
+            .collection("members")
+            .document(userId)
+            .delete()
+            .await()
     }
 }
