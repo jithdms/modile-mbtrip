@@ -23,6 +23,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,12 +40,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mbtrip.timeline.data.BlockRepository
+import com.example.mbtrip.timeline.data.TimelineDependencies
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Block
 import com.example.mbtrip.timeline.model.BlockKind
 import com.example.mbtrip.timeline.model.BlockStatus
 import com.example.mbtrip.timeline.model.Member
 import com.example.mbtrip.timeline.model.TimeMarker
+import com.example.mbtrip.timeline.vote.FakeVoteActions
+import com.example.mbtrip.timeline.vote.VoteActions
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -51,63 +58,128 @@ import java.time.LocalTime
 private data class EditorState(val block: Block, val isNew: Boolean)
 
 /**
- * P6 일정표 — 가짜 데이터 버전.
+ * P6 일정표 — 저장소(Fake 또는 Firestore)와 연결된 진입점. NavGraph 에서는 TimelineScreen() 만 부르면 된다.
  *
- * @param markers 체크인·체크아웃 시각 (파란 선)
- * @param now 현재 시각 표시선 위치 (빨간 선). null 이면 표시하지 않음 (여행 당일에만 넘김).
- * @param onInviteClick 상단 `+` → 이수진(P3) 초대 모달 연결 지점
- * @param onVoteClick   제안됨·투표중 블록의 '투표하기' → 최재성(P7) 투표 모달 연결 지점
+ * @param repository   블록 저장소. 기본값은 TimelineDependencies 에서 고른 것 (Firebase 설정 후 Firestore 로 전환)
+ * @param voteActions  투표 저장 로직 (최재성 담당). 기본값은 가짜
+ * @param markers      체크인·체크아웃 시각 (파란 선)
+ * @param now          현재 시각 표시선 위치 (빨간 선). null 이면 표시하지 않음
+ * @param onInviteClick 상단 `+` → 초대 모달 연결 지점
+ * @param onHomeClick  오른쪽 위 집 버튼 → 메인(방 만들기). null 이면 버튼 숨김
  */
 @Composable
 fun TimelineScreen(
-    initialBlocks: List<Block> = FakeBlocks.blocks,
-    members: List<Member> = FakeBlocks.members,
     tripId: String = FakeBlocks.TRIP_ID,
+    repository: BlockRepository = TimelineDependencies.blockRepository,
+    voteActions: VoteActions = TimelineDependencies.voteActions,
+    members: List<Member> = FakeBlocks.members,
     tripStart: LocalDate = FakeBlocks.TRIP_START,
     tripEnd: LocalDate = FakeBlocks.TRIP_END,
     markers: List<TimeMarker> = FakeBlocks.markers,
     now: LocalTime? = null,
     onInviteClick: () -> Unit = {},
-    onVoteClick: (Block) -> Unit = {},
+    onHomeClick: (() -> Unit)? = null,
 ) {
-    // 2주차에 ViewModel + StateFlow(Firestore 리스너)로 옮길 상태
-    var blocks by remember { mutableStateOf(initialBlocks) }
+    val vm: TimelineViewModel = viewModel(
+        key = "timeline-$tripId",
+        factory = TimelineViewModel.factory(repository, tripId),
+    )
+    val blocks by vm.blocks.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
+
+    TimelineContent(
+        blocks = blocks,
+        tripId = tripId,
+        members = members,
+        tripStart = tripStart,
+        tripEnd = tripEnd,
+        markers = markers,
+        now = now,
+        snackbar = snackbar,
+        voteActions = voteActions,
+        onAdd = vm::add,
+        onUpdate = vm::update,
+        onDelete = vm::delete,
+        onMove = vm::move,
+        onSeed = vm::seedFakeData,
+        onInviteClick = onInviteClick,
+        onHomeClick = onHomeClick,
+    )
+}
+
+/**
+ * 일정표 화면 그리기. 저장은 하지 않고, 규칙 검사 결과(EditResult)를 돌려주는 콜백만 부른다.
+ * @param blocks null = 불러오는 중
+ */
+@Composable
+internal fun TimelineContent(
+    blocks: List<Block>?,
+    tripId: String,
+    members: List<Member>,
+    tripStart: LocalDate,
+    tripEnd: LocalDate,
+    markers: List<TimeMarker>,
+    now: LocalTime?,
+    snackbar: SnackbarHostState,
+    voteActions: VoteActions,
+    onAdd: (Block) -> EditResult,
+    onUpdate: (original: Block, edited: Block) -> EditResult,
+    onDelete: (blockId: String) -> EditResult,
+    onMove: (blockId: String, requestedStartMinutes: Int, window: IntRange) -> EditResult,
+    onSeed: () -> Unit,
+    onInviteClick: () -> Unit,
+    onHomeClick: (() -> Unit)? = null,
+) {
+    val list = blocks.orEmpty()
     val dates = remember(tripStart, tripEnd) { tripDates(tripStart, tripEnd) }
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
     val selectedDate = dates.getOrNull(selectedIndex) ?: dates.first()
     var editor by remember { mutableStateOf<EditorState?>(null) }
     var choosingKind by remember { mutableStateOf(false) }
+    var voting by remember { mutableStateOf<Block?>(null) }
+    var sendingVote by remember { mutableStateOf(false) }
 
-    val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick)
+            MemberBar(members, onInviteClick, onHomeClick)
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
 
-            val dayBlocks = blocks.filter { it.date == selectedDate }.sortedBy { it.start }
+            val dayBlocks = list.filter { it.date == selectedDate }.sortedBy { it.start }
             DayTimelineGrid(
                 dayBlocks = dayBlocks,
                 markers = markers.filter { it.date == selectedDate },
                 now = now,
                 onBlockClick = { editor = EditorState(it, isNew = false) },
                 onBlockMoved = { block, requested, window ->
-                    when (val r = moveBlock(blocks, block.id, requested, window)) {
+                    when (val r = onMove(block.id, requested, window)) {
                         is EditResult.Ok -> {
-                            val moved = r.blocks.first { it.id == block.id }
+                            val moved = r.blocks.firstOrNull { it.id == block.id }
                             if (block.kind == BlockKind.FIXED && block.status == BlockStatus.CONFIRMED &&
-                                moved.status == BlockStatus.PROPOSED
+                                moved?.status == BlockStatus.PROPOSED
                             ) toast("확정 블록을 옮겨서 '제안됨'으로 바뀌었어요.")
-                            blocks = r.blocks
                         }
                         is EditResult.Error -> toast(r.message)
                     }
                 },
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // 불러오는 중 / 여행 전체가 비어 있을 때 (Firestore 처음 연결 시 테스트용 버튼)
+        if (blocks == null) {
+            Text(
+                "일정을 불러오는 중…", fontSize = 13.sp, color = TimelineColors.SubText,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else if (blocks.isEmpty()) {
+            TextButton(onClick = onSeed, modifier = Modifier.align(Alignment.Center)) {
+                Text("테스트용 가짜 일정 넣기")
+            }
         }
 
         FloatingActionButton(
@@ -126,7 +198,7 @@ fun TimelineScreen(
             onDismiss = { choosingKind = false },
             onChoose = { kind ->
                 choosingKind = false
-                val draft = newDraft(blocks, tripId, selectedDate, kind)
+                val draft = newDraft(list, tripId, selectedDate, kind)
                 if (draft == null) {
                     toast("이 날에는 1시간짜리 빈 시간이 없어요.")
                 } else {
@@ -140,48 +212,59 @@ fun TimelineScreen(
         BlockEditorSheet(
             original = st.block,
             isNew = st.isNew,
-            allBlocks = blocks,
+            allBlocks = list,
             onDismiss = { editor = null },
             onSave = { edited ->
-                val r = if (st.isNew) addBlock(blocks, edited) else updateBlock(blocks, st.block, edited)
+                val r = if (st.isNew) onAdd(edited) else onUpdate(st.block, edited)
                 when (r) {
-                    is EditResult.Ok -> { blocks = r.blocks; editor = null }
+                    is EditResult.Ok -> { editor = null }
                     is EditResult.Error -> toast(r.message)
                 }
             },
             onDelete = {
-                when (val r = deleteBlock(blocks, st.block.id)) {
-                    is EditResult.Ok -> { blocks = r.blocks; editor = null; toast("블록을 삭제했어요.") }
+                when (val r = onDelete(st.block.id)) {
+                    is EditResult.Ok -> { editor = null; toast("블록을 삭제했어요.") }
                     is EditResult.Error -> toast(r.message)
                 }
             },
-            onVoteClick = { onVoteClick(st.block) },
+            onVoteClick = {
+                editor = null
+                voting = st.block
+            },
+        )
+    }
+
+    voting?.let { block ->
+        VoteDialog(
+            block = block,
+            sending = sendingVote,
+            onDismiss = { voting = null },
+            onSubmit = { choice, comment ->
+                scope.launch {
+                    sendingVote = true
+                    val result = voteActions.submitVote(tripId, block.id, choice, comment)
+                    sendingVote = false
+                    result
+                        .onSuccess { voting = null; snackbar.showSnackbar("의견을 보냈어요.") }
+                        .onFailure { snackbar.showSnackbar("보내지 못했어요: ${it.message}") }
+                }
+            },
         )
     }
 }
 
 /* ───────────────────────── 상단: 동행자 바 ───────────────────────── */
 
+/** 맨 위: [+](프로필 사진들) ………… ⌂ 메인으로 (onHomeClick 이 null 이면 집 버튼 숨김) */
 @Composable
-private fun MemberBar(members: List<Member>, onInviteClick: () -> Unit) {
+private fun MemberBar(members: List<Member>, onInviteClick: () -> Unit, onHomeClick: (() -> Unit)?) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Circle(onClick = onInviteClick) { Text("+", fontSize = 24.sp, color = TimelineColors.SubText) }
-        members.forEach { m -> Circle { Text(m.nickname.take(1), fontWeight = FontWeight.Bold) } }
+        MemberRow(members, onInviteClick, Modifier.weight(1f))
+        if (onHomeClick != null) HomeButton(onHomeClick)
     }
-}
-
-@Composable
-private fun Circle(onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    Box(
-        Modifier.size(44.dp).clip(CircleShape)
-            .border(1.dp, TimelineColors.Border, CircleShape)
-            .background(Color(0xFFF7F7F7))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) { content() }
 }
 
 /* ───────────────────────── 날짜 탭 (1일차, 2일차 …) ───────────────────────── */
@@ -259,5 +342,22 @@ private fun KindOption(title: String, desc: String, color: Color, modifier: Modi
 @Preview(showBackground = true, widthDp = 360, heightDp = 760, name = "1일차 · 현재 14:10")
 @Composable
 private fun TimelinePreview() {
-    TimelineScreen(now = LocalTime.of(14, 10))
+    TimelineContent(
+        blocks = FakeBlocks.blocks,
+        tripId = FakeBlocks.TRIP_ID,
+        members = FakeBlocks.members,
+        tripStart = FakeBlocks.TRIP_START,
+        tripEnd = FakeBlocks.TRIP_END,
+        markers = FakeBlocks.markers,
+        now = LocalTime.of(14, 10),
+        snackbar = remember { SnackbarHostState() },
+        voteActions = FakeVoteActions,
+        onAdd = { EditResult.Ok(FakeBlocks.blocks) },
+        onUpdate = { _, _ -> EditResult.Ok(FakeBlocks.blocks) },
+        onDelete = { EditResult.Ok(FakeBlocks.blocks) },
+        onMove = { _, _, _ -> EditResult.Ok(FakeBlocks.blocks) },
+        onSeed = {},
+        onInviteClick = {},
+        onHomeClick = {},
+    )
 }

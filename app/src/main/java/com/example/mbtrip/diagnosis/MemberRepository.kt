@@ -5,18 +5,13 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
 
-/** Member 문서 저장소. Firebase 익명 인증 UID와 현재 여행 ID를 저장한다. */
-class MemberRepository(
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
-    private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
-) {
     suspend fun saveJpScore(tripId: String, jpScore: Int): String {
         require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
         require(jpScore in 0..100)
-        val user = auth.currentUser ?: auth.signInAnonymously().await().user
-            ?: error("Firebase 사용자 인증에 실패했어요.")
-        saveJpScore(user.uid, tripId, jpScore)
-        return user.uid
+        // Firebase 대신 가짜 사용자 ID를 반환합니다.
+        val dummyUserId = "local_user_id"
+        saveJpScore(dummyUserId, tripId, jpScore)
+        return dummyUserId
     }
 
     suspend fun saveJpScore(userId: String, tripId: String, jpScore: Int) {
