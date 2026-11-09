@@ -75,4 +75,5 @@ dependencies {
     implementation("androidx.cardview:cardview:1.0.0")
     // 일정 모달 지도 (OpenStreetMap · API 키 필요 없음)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }
