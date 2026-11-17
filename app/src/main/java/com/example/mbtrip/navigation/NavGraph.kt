@@ -17,6 +17,8 @@ import com.example.mbtrip.timeline.model.Block
 import com.example.mbtrip.timeline.model.Member
 import com.example.mbtrip.timeline.ui.TimelineScreen
 import com.example.mbtrip.travel.*
+import com.example.mbtrip.createtrip.*
+import com.example.mbtrip.ui.screens.MyPageScreen
 import com.example.mbtrip.ui.component.TripExampleScreen
 import com.example.mbtrip.ui.screen.LandingScreen
 import com.example.mbtrip.ui.screens.LoginScreen
@@ -25,7 +27,12 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.*
 import com.example.mbtrip.auth.*
 
+const val SHOW_DEV_MENU = false
 sealed class Screen(val route: String) {
+    object DevMenu : Screen("dev_menu")
+    object TripSetup : Screen("trip_setup")
+    object MyPage : Screen("mypage")
+    object TripReview : Screen("trip_review")
     object Landing : Screen("landing")
     object Login : Screen("login")
     object Home : Screen("home")
@@ -55,6 +62,7 @@ fun MBTripNavGraph(
     val scope = remember(session?.uid) { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
     DisposableEffect(scope) { onDispose { scope.cancel() } }
     var active by remember { mutableStateOf(repository.restore()) }
+    var travelSetup by remember(active?.id) { mutableStateOf<TripSetup?>(null) }
     var creating by remember { mutableStateOf(false) }
     var createError by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
@@ -76,7 +84,7 @@ fun MBTripNavGraph(
     LaunchedEffect(session, currentRoute) {
         if (session?.anonymous != false && currentRoute in listOf(
                 Screen.Home.route, Screen.CreateTrip.route, Screen.Diagnosis.route,
-                Screen.Friends.route, Screen.Timeline.route)) {
+                Screen.Friends.route, Screen.Timeline.route, Screen.TripSetup.route, Screen.MyPage.route, Screen.TripReview.route, Screen.DevMenu.route)) {
             navController.navigate(Screen.Login.route) {
                 popUpTo(navController.graph.id) { inclusive = true }
                 launchSingleTop = true
@@ -93,6 +101,23 @@ fun MBTripNavGraph(
     }.collectAsState(initial = Loaded())
 
     NavHost(navController, startDestination = initialDestination) {
+        composable(Screen.DevMenu.route) { DevMenuScreen(onOpen = { route ->
+            navController.navigate(if (route == Screen.CreateTrip.route) Screen.TripSetup.route else route)
+        }) }
+        composable(Screen.MyPage.route) { MyPageScreen(
+            onBackClick = { navController.popBackStack() },
+            onReTestClick = { navController.navigate(Screen.Diagnosis.route) }) }
+        composable(Screen.TripReview.route) { TripReviewXmlPreview() }
+        composable(Screen.TripSetup.route) {
+            val trip = active
+            if (trip == null) StatusPage("먼저 여행을 만들어주세요.", onBack = { navController.popBackStack() })
+            else TripSetupScreen(members = memberState.value.orEmpty(),
+                tripStart = trip.input.start, tripEnd = trip.input.end,
+                initial = travelSetup ?: TripSetup(dayTrip = trip.input.start == trip.input.end),
+                onBack = { navController.popBackStack() },
+                onInviteClick = { navController.navigate(Screen.Friends.route) },
+                onSave = { setup -> travelSetup = setup; navController.navigate(Screen.Timeline.route) })
+        }
         composable(Screen.Landing.route) { LandingScreen(navController) }
         composable(Screen.Login.route) { LoginScreen(navController, onAuthenticated = { active = repository.restore(); retry++ }) }
         composable(Screen.Home.route) {
@@ -131,6 +156,7 @@ fun MBTripNavGraph(
                 onDiagnosisClick = { navController.navigate(Screen.Diagnosis.route) },
                 onOpenTripClick = { openError = null; opening = true },
                 onJoinTripClick = { joining = true },
+                onMyPageClick = { navController.navigate(Screen.MyPage.route) },
                 accountContent = {
                     AccountSessionBar(session, creating, onSignOut = { sessionAccess.signOut() },
                         onLink = { navController.navigate(Screen.Login.route) })
@@ -160,6 +186,7 @@ fun MBTripNavGraph(
                 Text("${trip.input.start} ~ ${trip.input.end} · ${trip.input.headcount}명")
                 Text("여행 ID: ${trip.id}", style = MaterialTheme.typography.bodySmall)
                 Text("동행자 ${memberState.value?.size ?: 0}명")
+                Button(onClick = { navController.navigate(Screen.TripSetup.route) }) { Text("숙소·교통 입력") }
                 if (repository.currentUid() == trip.ownerId) InviteOwnerPanel(
                     onIssue = { invites.issue(trip) }, onRevoke = { invites.revoke(trip) })
                 Button(onClick = { navController.navigate(Screen.Diagnosis.route) }) { Text("J-P 진단하기") }
@@ -210,8 +237,9 @@ fun MBTripNavGraph(
                 memberState.value == null || blockState.value == null -> StatusPage("여행 일정을 불러오는 중이에요.", onBack = { navController.popBackStack() })
                 else -> TimelineScreen(
                     initialBlocks = blockState.value.orEmpty(), members = memberState.value.orEmpty(),
-                    tripId = trip.id, tripStart = trip.input.start, tripEnd = trip.input.end, markers = emptyList(),
+                    tripId = trip.id, tripStart = trip.input.start, tripEnd = trip.input.end, markers = travelSetup?.toMarkers().orEmpty(),
                     onInviteClick = { navController.navigate(Screen.Friends.route) },
+                    onHomeClick = { navController.navigate(Screen.Home.route) { popUpTo(Screen.Home.route); launchSingleTop = true } },
                     onBlocksChange = { before, after -> repository.saveBlocks(trip, before, after) },
                 )
             }

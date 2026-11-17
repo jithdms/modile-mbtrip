@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:background="@android:color/white"
+    android:padding="24dp">
+
+    <!-- 상단 타이틀 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="여행은 어떠셨나요?"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/black"
+        android:layout_marginTop="60dp"
+        android:layout_marginBottom="24dp" />
+
+    <!-- 별점 영역 -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="32dp">
+
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/btn_star_big_on"
+            android:layout_margin="4dp" />
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/btn_star_big_on"
+            android:layout_margin="4dp" />
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/btn_star_big_off"
+            android:layout_margin="4dp" />
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/btn_star_big_off"
+            android:layout_margin="4dp" />
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/btn_star_big_off"
+            android:layout_margin="4dp" />
+    </LinearLayout>
+
+    <!-- 이미지 첨부 박스 3개 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginBottom="24dp">
+
+        <FrameLayout
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:background="@drawable/review_bg_rounded_box"
+            android:layout_marginEnd="12dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="+"
+                android:textSize="28sp"
+                android:textColor="#888888"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <View
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:background="@drawable/review_bg_rounded_box"
+            android:layout_marginEnd="12dp" />
+
+        <View
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:background="@drawable/review_bg_rounded_box" />
+    </LinearLayout>
+
+    <!-- 제목 입력 에디트텍스트 -->
+    <EditText
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@drawable/review_bg_rounded_box"
+        android:hint="제목을 입력해주세요."
+        android:textSize="14sp"
+        android:paddingHorizontal="16dp"
+        android:layout_marginBottom="16dp"
+        android:inputType="text" />
+
+    <!-- 내용 입력 에디트텍스트 -->
+    <EditText
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:background="@drawable/review_bg_rounded_box"
+        android:gravity="top|start"
+        android:padding="16dp"
+        android:textSize="14sp"
+        android:layout_marginBottom="32dp"
+        android:inputType="textMultiLine" />
+
+    <!-- 하단 제출하기 버튼 -->
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="55dp"
+        android:text="제출하기"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:backgroundTint="#1E1E1E" />
+
+</LinearLayout>

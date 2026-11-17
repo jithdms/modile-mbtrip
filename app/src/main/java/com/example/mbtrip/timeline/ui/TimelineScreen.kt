@@ -71,6 +71,7 @@ fun TimelineScreen(
     now: LocalTime? = null,
     onInviteClick: () -> Unit = {},
     onVoteClick: (Block) -> Unit = {},
+    onHomeClick: (() -> Unit)? = null,
     onBlocksChange: suspend (List<Block>, List<Block>) -> Unit = { _, _ -> },
 ) {
     // 2주차에 ViewModel + StateFlow(Firestore 리스너)로 옮길 상태
@@ -102,7 +103,10 @@ fun TimelineScreen(
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(members, onInviteClick)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { MemberBar(members, onInviteClick) }
+                if (onHomeClick != null) HomeButton(onHomeClick)
+            }
             TextButton(onClick = { recommending = true }, enabled = !saving) { Text("맛집·카페 추천") }
             if (saving) Text("일정을 저장하고 있어요.", Modifier.padding(horizontal = 16.dp))
             HorizontalDivider()

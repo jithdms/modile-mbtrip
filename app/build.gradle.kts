@@ -49,8 +49,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.navigation.compose)              // 이수진: 화면 이동
-    implementation(libs.androidx.compose.material.icons.extended) // 이수진: 아이콘
+    implementation(libs.androidx.compose.material.icons.extended) // 추가: 아이콘 (1주차 main에 있던 것)
+    implementation(libs.androidx.navigation.compose)              // 추가: 화면 이동 ← 이번 오류 원인
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
@@ -62,6 +63,5 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    implementation("io.coil-kt:coil-compose:2.6.0")
 }
-
-
