@@ -57,6 +57,11 @@ class DiagnosisView @JvmOverloads constructor(
         findViewById<Button>(R.id.continueButton).setOnClickListener { this.onContinue?.invoke() }
     }
 
+    fun setSaveState(saving: Boolean, error: String?) {
+        findViewById<Button>(R.id.continueButton).isEnabled = !saving && error == null
+        findViewById<Button>(R.id.restartButton).isEnabled = !saving
+    }
+
     private fun buildQuestionCards() {
         val inflater = LayoutInflater.from(context)
         TravelDiagnosis.questions.forEachIndexed { index, question ->
@@ -114,7 +119,7 @@ class DiagnosisView @JvmOverloads constructor(
         greeting.text = "${displayName}님의 성향은..."
         findViewById<TextView>(R.id.resultLabel).text = "\"${result.label}\""
         findViewById<TextView>(R.id.resultDominantPercent).text =
-            "${maxOf(result.jPercent, result.pPercent)}%"
+            "J ${result.jPercent}% · P ${result.pPercent}%"
         // Stored Member.jpScore uses the opposite axis: 0 = J, 100 = P.
         findViewById<ProgressBar>(R.id.resultSpectrum).progress = result.jPercent
         findViewById<TextView>(R.id.resultScores).text =

@@ -9,7 +9,10 @@ import java.time.LocalTime
 
 /** J-P 점수 차이를 확정/자유 시간 비율로 바꾸는 규칙. jpScore는 0=J, 100=P. */
 data class AllocationRatio(val fixedPercent: Int, val freePercent: Int) {
-    init { require(fixedPercent + freePercent == 100) }
+    init {
+        require(fixedPercent in 0..100 && freePercent in 0..100)
+        require(fixedPercent + freePercent == 100)
+    }
 }
 
 object ItineraryAllocator {
@@ -37,7 +40,12 @@ object ItineraryAllocator {
         requiredBlocks: List<Block>,
         candidates: List<PlannedActivity>,
     ): List<Block> {
-        require(dayStart < dayEnd)
+        require(tripId.isNotBlank()) { "여행 정보가 필요해요." }
+        require(dayStart < dayEnd) { "하루 시작 시각은 종료 시각보다 빨라야 해요." }
+        require(requiredBlocks.all { it.id.isNotBlank() }) { "필수 일정 ID가 비어 있어요." }
+        require(requiredBlocks.map { it.id }.distinct().size == requiredBlocks.size) {
+            "필수 일정 ID가 중복돼요."
+        }
         require(requiredBlocks.all { it.date == date && it.tripId == tripId })
         require(requiredBlocks.all { it.start >= dayStart && it.end <= dayEnd })
         val ratio = ratioFor(jpScores)
@@ -46,6 +54,15 @@ object ItineraryAllocator {
         val result = requiredBlocks.sortedBy { it.start }.toMutableList()
         require(noOverlap(result)) { "필수 일정끼리 시간이 겹쳐요." }
         var fixedMinutes = result.filter { it.kind == BlockKind.FIXED }.sumOf { minutes(it.start, it.end) }
+        // Existing documents may already use an auto/free ID from a previous allocation.
+        val usedIds = result.mapTo(mutableSetOf()) { it.id }
+        fun nextId(prefix: String, index: Int): String {
+            val base = "${prefix}_${date}_$index"
+            var id = base
+            var suffix = 1
+            while (!usedIds.add(id)) id = "${base}_${suffix++}"
+            return id
+        }
         var serial = 0
 
         for (activity in candidates) {
@@ -54,7 +71,7 @@ object ItineraryAllocator {
             if (targetFixed - fixedMinutes < duration) continue
             val slot = firstGap(result, dayStart, dayEnd, duration) ?: continue
             result += Block(
-                id = "auto_${date}_${serial++}", tripId = tripId, date = date,
+                id = nextId("auto", serial++), tripId = tripId, date = date,
                 start = slot, end = slot.plusMinutes(duration.toLong()), kind = BlockKind.FIXED,
                 status = BlockStatus.PROPOSED, source = BlockSource.AUTO, title = activity.title,
                 place = activity.place,
@@ -66,10 +83,10 @@ object ItineraryAllocator {
         var cursor = dayStart
         var freeIndex = 0
         for (block in occupied) {
-            if (cursor < block.start) result += freeBlock(tripId, date, cursor, block.start, freeIndex++)
+            if (cursor < block.start) result += freeBlock(nextId("free", freeIndex++), tripId, date, cursor, block.start)
             if (cursor < block.end) cursor = block.end
         }
-        if (cursor < dayEnd) result += freeBlock(tripId, date, cursor, dayEnd, freeIndex)
+        if (cursor < dayEnd) result += freeBlock(nextId("free", freeIndex), tripId, date, cursor, dayEnd)
         return result.sortedBy { it.start }
     }
 
@@ -82,8 +99,8 @@ object ItineraryAllocator {
         return cursor.takeIf { java.time.Duration.between(it, end).toMinutes() >= duration }
     }
 
-    private fun freeBlock(tripId: String, date: LocalDate, start: LocalTime, end: LocalTime, index: Int) = Block(
-        id = "free_${date}_$index", tripId = tripId, date = date, start = start, end = end,
+    private fun freeBlock(id: String, tripId: String, date: LocalDate, start: LocalTime, end: LocalTime) = Block(
+        id = id, tripId = tripId, date = date, start = start, end = end,
         kind = BlockKind.FREE, status = BlockStatus.CONFIRMED, source = BlockSource.AUTO,
     )
 

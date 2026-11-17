@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.mbtrip.timeline.model.Member
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,8 +63,9 @@ fun FriendListScreen(
     onBack: () -> Unit,
     onFriendClick: (Member) -> Unit = {},
     onDeleteFriend: suspend (Member) -> Unit = {},
+    canRemove: (Member) -> Boolean = { true },
 ) {
-    val visibleFriends = remember(friends) { friends.toMutableStateList() }
+    val visibleFriends = friends
     var query by rememberSaveable { mutableStateOf("") }
     var activeMenuId by remember { mutableStateOf<String?>(null) }
     var friendForInfo by remember { mutableStateOf<Member?>(null) }
@@ -71,6 +73,7 @@ fun FriendListScreen(
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var deleting by remember { mutableStateOf(false) }
     val filteredFriends = visibleFriends.filter { friend ->
         query.isBlank() || friend.nickname.contains(query, ignoreCase = true) ||
             friend.handle.contains(query, ignoreCase = true) || friend.userId.contains(query, ignoreCase = true)
@@ -81,7 +84,7 @@ fun FriendListScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("친구 리스트") },
+                title = { Text("여행 동행자") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
@@ -109,7 +112,7 @@ fun FriendListScreen(
 
             if (filteredFriends.isEmpty()) {
                 Text(
-                    text = if (visibleFriends.isEmpty()) "친구가 아직 없어요." else "검색 결과가 없어요.",
+                    text = if (visibleFriends.isEmpty()) "동행자가 아직 없어요." else "검색 결과가 없어요.",
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
                     color = Color(0xFF777777),
                 )
@@ -118,6 +121,7 @@ fun FriendListScreen(
                     items(filteredFriends, key = Member::userId) { friend ->
                         FriendRow(
                             friend = friend,
+                            canRemove = canRemove(friend),
                             menuExpanded = activeMenuId == friend.userId,
                             onRowClick = { onFriendClick(friend); friendForInfo = friend },
                             onMenuClick = { activeMenuId = friend.userId },
@@ -135,18 +139,18 @@ fun FriendListScreen(
     friendForInfo?.let { friend ->
         AlertDialog(
             onDismissRequest = { friendForInfo = null },
-            title = { Text("친구 정보") },
+            title = { Text("동행자 정보") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(friend.nickname, style = MaterialTheme.typography.titleMedium)
                     Text(friend.handle, color = Color(0xFF777777))
                     Text("사용자 ID: ${friend.userId}")
-                    Text("J ${100 - friend.jpScore}% · P ${friend.jpScore}%")
+                    Text(if (friend.hasDiagnosis) "J ${100 - friend.jpScore}% · P ${friend.jpScore}%" else "아직 진단하지 않았어요.")
                     if (friend.isTraveling) Text("✈ 여행 중")
                 }
             },
             confirmButton = {
-                TextButton(onClick = { friendForInfo = null }) { Text("닫기") }
+                TextButton(enabled = !deleting, onClick = { friendForInfo = null }) { Text("닫기") }
             },
         )
     }
@@ -154,24 +158,26 @@ fun FriendListScreen(
     friendForDelete?.let { friend ->
         AlertDialog(
             onDismissRequest = { friendForDelete = null },
-            title = { Text("친구 삭제") },
-            text = { Text("${friend.nickname}님을 친구 목록에서 삭제할까요?") },
+            title = { Text("동행자 내보내기") },
+            text = { Text("${friend.nickname}님을 이 여행에서 내보낼까요?") },
             dismissButton = {
-                TextButton(onClick = { friendForDelete = null }) { Text("취소") }
+                TextButton(enabled = !deleting, onClick = { friendForDelete = null }) { Text("취소") }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = !deleting, onClick = {
                     scope.launch {
                         try {
+                            deleting = true
                             onDeleteFriend(friend)
-                            visibleFriends.removeAll { it.userId == friend.userId }
+                            // The Firestore snapshot is the source of truth for the list.
                             friendForDelete = null
-                            snackbarHostState.showSnackbar("친구를 삭제했어요.")
+                            snackbarHostState.showSnackbar("동행자를 내보냈어요.")
+                        } catch (cancelled: CancellationException) { throw cancelled
                         } catch (error: Exception) {
-                            snackbarHostState.showSnackbar("삭제에 실패했어요. 다시 시도해 주세요.")
-                        }
+                            snackbarHostState.showSnackbar(error.message ?: "내보내기에 실패했어요. 다시 시도해주세요.")
+                        } finally { deleting = false }
                     }
-                }) { Text("삭제") }
+                }) { Text(if (deleting) "처리 중" else "내보내기") }
             },
         )
     }
@@ -205,6 +211,7 @@ private fun FriendSearchBar(
 @Composable
 private fun FriendRow(
     friend: Member,
+    canRemove: Boolean,
     menuExpanded: Boolean,
     onRowClick: () -> Unit,
     onMenuClick: () -> Unit,
@@ -222,7 +229,7 @@ private fun FriendRow(
                 color = Color(0xFFE5E7E8),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(friend.nickname.take(1), style = MaterialTheme.typography.titleLarge, color = Color(0xFF525252))
+                    MemberAvatar(friend, Modifier.fillMaxSize())
                 }
             }
             if (friend.isTraveling) {
@@ -239,8 +246,8 @@ private fun FriendRow(
                 Icon(Icons.Default.MoreVert, contentDescription = "친구 메뉴", tint = Color.Black)
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = onMenuDismiss) {
-                DropdownMenuItem(text = { Text("친구 정보") }, onClick = onInfoClick)
-                DropdownMenuItem(text = { Text("친구 삭제") }, onClick = onDeleteClick)
+                DropdownMenuItem(text = { Text("동행자 정보") }, onClick = onInfoClick)
+                if (canRemove) DropdownMenuItem(text = { Text("동행자 내보내기") }, onClick = onDeleteClick)
             }
         }
     }

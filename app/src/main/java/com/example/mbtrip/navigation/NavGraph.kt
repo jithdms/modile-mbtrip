@@ -1,31 +1,30 @@
 package com.example.mbtrip.navigation
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.toMutableStateList
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.*
+import com.example.mbtrip.diagnosis.DiagnosisResult
+import com.example.mbtrip.diagnosis.DiagnosisScreen
+import com.example.mbtrip.friends.FriendListScreen
+import com.example.mbtrip.timeline.model.Block
+import com.example.mbtrip.timeline.model.Member
+import com.example.mbtrip.timeline.ui.TimelineScreen
+import com.example.mbtrip.travel.*
 import com.example.mbtrip.ui.component.TripExampleScreen
 import com.example.mbtrip.ui.screen.LandingScreen
 import com.example.mbtrip.ui.screens.LoginScreen
-import com.example.mbtrip.diagnosis.DiagnosisScreen
-import com.example.mbtrip.diagnosis.MemberRepository
-import com.example.mbtrip.timeline.ui.TimelineScreen
-import com.example.mbtrip.friends.FriendListScreen
-import com.example.mbtrip.timeline.fake.FakeBlocks
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.*
+import com.example.mbtrip.auth.*
 
-// 화면 라우트(경로) 정의
 sealed class Screen(val route: String) {
     object Landing : Screen("landing")
     object Login : Screen("login")
@@ -36,109 +35,195 @@ sealed class Screen(val route: String) {
     object Friends : Screen("friends")
 }
 
+private data class Loaded<T>(val value: T? = null, val error: String? = null)
+private fun <T> Flow<T>.asLoaded(): Flow<Loaded<T>> = map { Loaded(value = it) }.catch {
+    if (it is CancellationException) throw it
+    emit(Loaded(error = it.message ?: "데이터를 불러오지 못했어요."))
+}
+
 @Composable
-fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
+fun MBTripNavGraph(
+    navController: NavHostController = rememberNavController(),
+    sessionAccess: SessionAccess = remember { FirebaseSessionAccess() },
+) {
+    val session by remember(sessionAccess) { sessionAccess.observe() }.collectAsState(initial = sessionAccess.current())
+    val initialDestination = remember { if (session?.anonymous == false) Screen.Home.route else Screen.Landing.route }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val memberRepository = MemberRepository()
-    val friends = remember { FakeBlocks.members.toMutableStateList() }
-    NavHost(
-        navController = navController,
-        startDestination = Screen.Landing.route
-    ) {
-        // 홈(마이페이지)
+    val repository = remember { TravelRepository(context) }
+    val invites = remember { InviteRepository() }
+    var joining by remember { mutableStateOf(false) }
+    val scope = remember(session?.uid) { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    DisposableEffect(scope) { onDispose { scope.cancel() } }
+    var active by remember { mutableStateOf(repository.restore()) }
+    var creating by remember { mutableStateOf(false) }
+    var createError by remember { mutableStateOf<String?>(null) }
+    var opening by remember { mutableStateOf(false) }
+    var tripIdInput by remember { mutableStateOf("") }
+    var openError by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    var previousUid by remember { mutableStateOf(session?.uid) }
+    LaunchedEffect(session?.uid) {
+        if (previousUid != session?.uid) {
+            previousUid = session?.uid
+            active = if (session == null) null else repository.restore()
+            joining = false; opening = false; creating = false
+            tripIdInput = ""; createError = null; openError = null; retry++
+
+        }
+    }
+    val currentEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentEntry?.destination?.route
+    LaunchedEffect(session, currentRoute) {
+        if (session?.anonymous != false && currentRoute in listOf(
+                Screen.Home.route, Screen.CreateTrip.route, Screen.Diagnosis.route,
+                Screen.Friends.route, Screen.Timeline.route)) {
+            navController.navigate(Screen.Login.route) {
+                popUpTo(navController.graph.id) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+    val memberState by remember(active, retry) {
+        active?.let { repository.observeMembers(it).asLoaded() }
+            ?: flowOf(Loaded(value = emptyList<Member>()))
+    }.collectAsState(initial = Loaded())
+    val blockState by remember(active, retry) {
+        active?.let { repository.observeBlocks(it).asLoaded() }
+            ?: flowOf(Loaded(value = emptyList<Block>()))
+    }.collectAsState(initial = Loaded())
+
+    NavHost(navController, startDestination = initialDestination) {
+        composable(Screen.Landing.route) { LandingScreen(navController) }
+        composable(Screen.Login.route) { LoginScreen(navController, onAuthenticated = { active = repository.restore(); retry++ }) }
         composable(Screen.Home.route) {
+            if (joining) InviteJoinDialog(onDismiss = { joining = false }, onJoin = { code ->
+                val tripId = invites.join(code)
+                active = repository.openTrip(tripId)
+                joining = false
+                navController.navigate(Screen.CreateTrip.route)
+            })
+            if (opening) AlertDialog(
+                onDismissRequest = { if (!creating) opening = false },
+                title = { Text("참여 중인 여행 불러오기") },
+                text = {
+                    Column {
+                        OutlinedTextField(tripIdInput, onValueChange = { tripIdInput = it }, label = { Text("여행 ID") }, singleLine = true)
+                        Text("이미 동행자로 등록된 여행만 불러올 수 있어요.", style = MaterialTheme.typography.bodySmall)
+                        openError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                },
+                confirmButton = { TextButton(enabled = !creating && tripIdInput.isNotBlank(), onClick = {
+                    creating = true; openError = null
+                    scope.launch {
+                        try { active = repository.openTrip(tripIdInput); opening = false; navController.navigate(Screen.CreateTrip.route) }
+                        catch (e: CancellationException) { throw e }
+                        catch (e: Exception) { openError = e.message }
+                        finally { creating = false }
+                    }
+                }) { Text(if (creating) "불러오는 중" else "불러오기") } },
+                dismissButton = { TextButton(enabled = !creating, onClick = { opening = false }) { Text("취소") } },
+            )
             TripExampleScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateNext = { navController.navigate(Screen.CreateTrip.route) }
-            )
-        }
-        // 초대 생성 화면
-        composable(Screen.CreateTrip.route) {
-            PlaceholderScreen(
-                title = "초대 화면",
-                onNext = { navController.popBackStack() },
-                onDiagnosis = { navController.navigate(Screen.Diagnosis.route) },
-                onTimeline = { navController.navigate(Screen.Timeline.route) }
-            )
-        }
-        // 랜딩화면
-        composable(Screen.Landing.route) {
-            LandingScreen(navController = navController)
-        }
-        // 로그인/회원가입 화면
-        composable(Screen.Login.route) {
-            LoginScreen(navController = navController)
-        }
-        // 진단 완료 시 샘플 여행 Member 문서에 점수를 저장합니다.
-        composable(Screen.Diagnosis.route) {
-            DiagnosisScreen(
-                onContinue = { navController.popBackStack() },
-                onResult = { result ->
-                    scope.launch {
+                onNavigateNext = { navController.navigate(Screen.CreateTrip.route) },
+                isCreating = creating,
+                error = createError,
+                onDiagnosisClick = { navController.navigate(Screen.Diagnosis.route) },
+                onOpenTripClick = { openError = null; opening = true },
+                onJoinTripClick = { joining = true },
+                accountContent = {
+                    AccountSessionBar(session, creating, onSignOut = { sessionAccess.signOut() },
+                        onLink = { navController.navigate(Screen.Login.route) })
+                },
+                onCurrentTripClick = active?.let { { navController.navigate(Screen.CreateTrip.route) } },
+                onCreateTrip = { departure, destination, dates, count ->
+                    val input = runCatching { TripInput.parse(departure, destination, dates, count) }
+                    if (input.isFailure) createError = input.exceptionOrNull()?.message
+                    else scope.launch {
+                        creating = true; createError = null
                         try {
-                            memberRepository.saveJpScore(
-                                tripId = FakeBlocks.TRIP_ID,
-                                jpScore = result.firestoreJpScore,
-                            )
-                            Toast.makeText(context, "진단 점수를 Firebase에 저장했어요.", Toast.LENGTH_SHORT).show()
-                        } catch (error: Exception) {
-                            Toast.makeText(
-                                context,
-                                "Firebase 저장 실패: ${error.localizedMessage ?: "설정을 확인해주세요."}",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
+                            active = repository.create(input.getOrThrow())
+                            navController.navigate(Screen.CreateTrip.route)
+                        } catch (e: CancellationException) { throw e }
+                        catch (e: Exception) { createError = "여행을 저장하지 못했어요: ${e.message}" }
+                        finally { creating = false }
                     }
                 },
             )
         }
-        // 일정표 (지소은)
-        composable(Screen.Timeline.route) {
-            TimelineScreen(onInviteClick = { navController.navigate(Screen.Friends.route) })
+        composable(Screen.CreateTrip.route) {
+            val trip = active
+            if (trip == null) {
+                StatusPage("먼저 여행을 만들어주세요.", onBack = { navController.popBackStack() })
+            } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("${trip.input.destination} 여행", style = MaterialTheme.typography.headlineSmall)
+                Text("${trip.input.start} ~ ${trip.input.end} · ${trip.input.headcount}명")
+                Text("여행 ID: ${trip.id}", style = MaterialTheme.typography.bodySmall)
+                Text("동행자 ${memberState.value?.size ?: 0}명")
+                if (repository.currentUid() == trip.ownerId) InviteOwnerPanel(
+                    onIssue = { invites.issue(trip) }, onRevoke = { invites.revoke(trip) })
+                Button(onClick = { navController.navigate(Screen.Diagnosis.route) }) { Text("J-P 진단하기") }
+                Button(onClick = { navController.navigate(Screen.Friends.route) }) { Text("여행 동행자 보기") }
+                Button(onClick = { navController.navigate(Screen.Timeline.route) }) { Text("일정표·추천 보기") }
+                TextButton(onClick = { navController.popBackStack() }) { Text("뒤로") }
+            }
+        }
+        composable(Screen.Diagnosis.route) {
+            var lastResult by remember { mutableStateOf<DiagnosisResult?>(null) }
+            var saving by remember { mutableStateOf(false) }
+            var error by remember { mutableStateOf<String?>(null) }
+            var saved by remember { mutableStateOf(false) }
+            val save: (DiagnosisResult) -> Unit = { result ->
+                lastResult = result; saving = true; error = null; saved = false
+                scope.launch {
+                    try { repository.saveDiagnosis(result.firestoreJpScore, active); saved = true }
+                    catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { error = "진단 결과를 저장하지 못했어요: ${e.message}" }
+                    finally { saving = false }
+                }
+            }
+            DiagnosisScreen(
+                onContinue = { navController.popBackStack() }, onResult = save,
+                isSaving = saving, saveError = error, saved = saved,
+                onRetry = { lastResult?.let(save) },
+            )
         }
         composable(Screen.Friends.route) {
-            FriendListScreen(
-                friends = friends,
-                onBack = { navController.popBackStack() },
-                onDeleteFriend = { friend ->
-                    memberRepository.removeMember(FakeBlocks.TRIP_ID, friend.userId)
-                    friends.removeAll { it.userId == friend.userId }
-                },
-            )
+            val trip = active
+            when {
+                trip == null -> StatusPage("먼저 여행을 만들어주세요.", onBack = { navController.popBackStack() })
+                memberState.error != null -> StatusPage(memberState.error!!, { retry++ }, { navController.popBackStack() })
+                memberState.value == null -> StatusPage("동행자를 불러오는 중이에요.", onBack = { navController.popBackStack() })
+                else -> FriendListScreen(
+                    friends = memberState.value.orEmpty(), onBack = { navController.popBackStack() },
+                    canRemove = { repository.currentUid() == trip.ownerId && it.userId != trip.ownerId },
+                    onDeleteFriend = { repository.removeMember(trip, it.userId) },
+                )
+            }
+        }
+        composable(Screen.Timeline.route) {
+            val trip = active
+            val error = memberState.error ?: blockState.error
+            when {
+                trip == null -> StatusPage("먼저 여행을 만들어주세요.", onBack = { navController.popBackStack() })
+                error != null -> StatusPage(error, { retry++ }, { navController.popBackStack() })
+                memberState.value == null || blockState.value == null -> StatusPage("여행 일정을 불러오는 중이에요.", onBack = { navController.popBackStack() })
+                else -> TimelineScreen(
+                    initialBlocks = blockState.value.orEmpty(), members = memberState.value.orEmpty(),
+                    tripId = trip.id, tripStart = trip.input.start, tripEnd = trip.input.end, markers = emptyList(),
+                    onInviteClick = { navController.navigate(Screen.Friends.route) },
+                    onBlocksChange = { before, after -> repository.saveBlocks(trip, before, after) },
+                )
+            }
         }
     }
 }
 
 @Composable
-fun PlaceholderScreen(
-    title: String,
-    onNext: () -> Unit,
-    onDiagnosis: (() -> Unit)? = null,
-    onTimeline: (() -> Unit)? = null
-) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Column(
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(text = title, style = MaterialTheme.typography.headlineMedium)
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = onNext) {
-                Text("다음 화면으로 이동")
-            }
-            if (onDiagnosis != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedButton(onClick = onDiagnosis) {
-                    Text("진단 화면 미리보기")
-                }
-            }
-            if (onTimeline != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedButton(onClick = onTimeline) {
-                    Text("일정표 화면 미리보기")
-                }
-            }
-        }
+private fun StatusPage(message: String, onRetry: (() -> Unit)? = null, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(message)
+        if (onRetry != null) Button(onClick = onRetry) { Text("다시 불러오기") }
+        TextButton(onClick = onBack) { Text("뒤로") }
     }
 }

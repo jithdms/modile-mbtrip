@@ -1,191 +1,93 @@
 package com.example.mbtrip.ui.screens
 
-import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.mbtrip.auth.*
+import com.example.mbtrip.navigation.Screen
 import com.example.mbtrip.ui.component.MBTripButton
 import com.example.mbtrip.ui.component.MBTripTopBar
-import com.example.mbtrip.navigation.Screen
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(navController: NavController) {
-    val context = LocalContext.current
+fun LoginScreen(navController: NavController, onAuthenticated: () -> Unit = {}) {
+    val service = remember { FirebaseAccountService() }
+    AccountScreen(service, onBack = { navController.popBackStack() }, onSuccess = {
+        onAuthenticated()
+        navController.navigate(Screen.Home.route) {
+            popUpTo(navController.graph.id) { inclusive = true }
+            launchSingleTop = true
+        }
+    })
+}
 
-    // 로그인 <-> 회원가입 모드 전환 (true: 로그인, false: 회원가입)
-    var isLoginMode by remember { mutableStateOf(true) }
-
-    // 입력 상태 변수들
+@Composable
+fun AccountScreen(service: AccountService, onBack: () -> Unit, onSuccess: () -> Unit) {
+    var login by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
-    var userId by remember { mutableStateOf("") }
+    var nickname by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var passwordConfirm by remember { mutableStateOf("") }
-
-    // 가짜 중복 체크용 기존 회원 데이터 (예시용)
-    val existingEmails = listOf("test@naver.com", "mbtrip@google.com")
-    val existingIds = listOf("admin", "user123")
-
-    Scaffold(
-        topBar = {
-            MBTripTopBar(
-                title = if (isLoginMode) "로그인" else "회원가입",
-                onBackClick = { navController.popBackStack() }
-            )
-        },
-        containerColor = Color(0xFFF9FBFC)
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = if (isLoginMode) "MBTrip과 함께하는 맞춤 여행" else "새로운 계정 만들기",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1E3A5F)
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // [회원가입 전용] 이메일 입력창
-            if (!isLoginMode) {
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("이메일") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFA9D7F5),
-                        unfocusedBorderColor = Color.LightGray,
-                        focusedLabelColor = Color(0xFF1E3A5F),
-                        cursorColor = Color(0xFF1E3A5F)
-                    )
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // 아이디 입력창 (로그인 시에는 이메일/아이디 통합용으로 사용 가능)
-            OutlinedTextField(
-                value = userId,
-                onValueChange = { userId = it },
-                label = { Text(if (isLoginMode) "이메일 또는 아이디" else "아이디") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFA9D7F5),
-                    unfocusedBorderColor = Color.LightGray,
-                    focusedLabelColor = Color(0xFF1E3A5F),
-                    cursorColor = Color(0xFF1E3A5F)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 비밀번호 입력창
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text(if (isLoginMode) "비밀번호" else "새 비밀번호") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFA9D7F5),
-                    unfocusedBorderColor = Color.LightGray,
-                    focusedLabelColor = Color(0xFF1E3A5F),
-                    cursorColor = Color(0xFF1E3A5F)
-                )
-            )
-
-            // [회원가입 전용] 비밀번호 확인 입력창
-            if (!isLoginMode) {
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = passwordConfirm,
-                    onValueChange = { passwordConfirm = it },
-                    label = { Text("비밀번호 확인") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFA9D7F5),
-                        unfocusedBorderColor = Color.LightGray,
-                        focusedLabelColor = Color(0xFF1E3A5F),
-                        cursorColor = Color(0xFF1E3A5F)
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 실행 버튼
-            MBTripButton(
-                text = if (isLoginMode) "로그인하기" else "가입 완료하기",
-                isPrimary = true,
-                onClick = {
-                    if (isLoginMode) {
-                        // 로그인 성공 시 홈 화면으로 이동
-                        Toast.makeText(context, "로그인 성공!", Toast.LENGTH_SHORT).show()
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.Landing.route) { inclusive = false }
-                        }
-                    } else {
-                        // 회원가입 유효성 검사 로직
-                        if (email.isBlank() || userId.isBlank() || password.isBlank()) {
-                            Toast.makeText(context, "모든 항목을 입력해주세요.", Toast.LENGTH_SHORT).show()
-                        } else if (existingEmails.contains(email)) {
-                            Toast.makeText(context, "이미 사용 중인 이메일입니다.", Toast.LENGTH_SHORT).show()
-                        } else if (existingIds.contains(userId)) {
-                            Toast.makeText(context, "이미 사용 중인 아이디입니다.", Toast.LENGTH_SHORT).show()
-                        } else if (password != passwordConfirm) {
-                            Toast.makeText(context, "비밀번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
-                        } else {
-                            // 가입 성공 토스트 띄우기
-                            Toast.makeText(context, "회원가입이 완료되었습니다. 로그인해주세요.", Toast.LENGTH_SHORT).show()
-                            // 로그인 모드로 전환 및 입력값 초기화
-                            isLoginMode = true
-                            password = ""
-                            passwordConfirm = ""
-                        }
+    var confirmation by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var pendingUid by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    BackHandler(enabled = busy) { }
+    Scaffold(topBar = {
+        MBTripTopBar(title = if (login) "로그인" else "회원가입", onBackClick = { if (!busy) onBack() })
+    }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(if (login) "MBTrip과 함께하는 맞춤 여행" else "새로운 계정 만들기", style = MaterialTheme.typography.titleLarge)
+            if (pendingUid == null) {
+                OutlinedTextField(email, { email = it }, label = { Text("이메일") }, singleLine = true,
+                    enabled = !busy, modifier = Modifier.fillMaxWidth())
+                if (!login) OutlinedTextField(nickname, { nickname = it }, label = { Text("닉네임") },
+                    singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(password, { password = it }, label = { Text("비밀번호") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(), enabled = !busy, modifier = Modifier.fillMaxWidth())
+                if (!login) OutlinedTextField(confirmation, { confirmation = it }, label = { Text("비밀번호 확인") },
+                    visualTransformation = PasswordVisualTransformation(), singleLine = true,
+                    enabled = !busy, modifier = Modifier.fillMaxWidth())
+            } else Text("계정 인증이 완료되었어요. 프로필 저장을 마치면 여행을 시작할 수 있어요.")
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            MBTripButton(text = when {
+                busy -> "처리 중…"
+                pendingUid != null -> "프로필 저장 다시 시도"
+                login -> "로그인하기"
+                else -> "가입 완료하기"
+            }, isPrimary = true, enabled = !busy, onClick = {
+                val validation = if (pendingUid != null) null else AccountInput.validate(email, password,
+                    if (login) null else nickname, if (login) null else confirmation)
+                if (validation != null) error = validation
+                else {
+                    busy = true; error = null
+                    scope.launch {
+                        try {
+                            val uid = pendingUid ?: (if (login) service.signIn(email, password)
+                                else service.register(email, password)).also { pendingUid = it }
+                            password = ""; confirmation = ""
+                            service.completeProfile(uid, if (login) null else nickname)
+                            onSuccess()
+                        } catch (e: CancellationException) { throw e }
+                        catch (e: Exception) {
+                            error = if (pendingUid != null) "프로필을 저장하지 못했어요. 연결 상태를 확인하고 다시 시도해주세요."
+                                else accountError(e)
+                        } finally { busy = false }
                     }
                 }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 로그인 <-> 회원가입 모드 전환 버튼
-            TextButton(
-                onClick = {
-                    isLoginMode = !isLoginMode
-                    // 모드 바뀔 때 입력창 초기화
-                    password = ""
-                    passwordConfirm = ""
-                }
-            ) {
-                Text(
-                    text = if (isLoginMode) "계정이 없으신가요? 회원가입하기" else "이미 계정이 있으신가요? 로그인하기",
-                    color = Color(0xFF1E3A5F)
-                )
-            }
+            })
+            if (pendingUid == null) TextButton(enabled = !busy, onClick = {
+                login = !login; password = ""; confirmation = ""; error = null
+            }) { Text(if (login) "계정이 없으신가요? 회원가입하기" else "이미 계정이 있으신가요? 로그인하기") }
         }
     }
 }

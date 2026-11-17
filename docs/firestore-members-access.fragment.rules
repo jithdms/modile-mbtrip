@@ -1,0 +1,63 @@
+// DRAFT ONLY. Not deployed or validated by the Rules emulator.
+// Merge inside match /databases/{database}/documents after reviewing the actual
+// deployed rules, legacy owner fields, invitations, votes and comments.
+// A broad overlapping allow rule can override these restrictions.
+
+function bSignedIn() {
+  return request.auth != null;
+}
+
+function bMember(tripId) {
+  return bSignedIn()
+    && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+}
+
+function bOwner(tripId) {
+  return bSignedIn()
+    && get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid;
+}
+
+function bOwnerAfter(tripId) {
+  return bSignedIn()
+    && getAfter(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid;
+}
+
+match /trips/{tripId} {
+  allow get: if bOwner(tripId) || bMember(tripId);
+  allow create: if bSignedIn()
+    && request.resource.data.ownerId == request.auth.uid
+    && request.resource.data.tripId == tripId
+    && request.resource.data.scheduleVersion == 0;
+  allow update: if request.resource.data.ownerId == resource.data.ownerId
+    && request.resource.data.tripId == resource.data.tripId
+    && (bOwner(tripId)
+      || (bMember(tripId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scheduleVersion'])
+        && request.resource.data.scheduleVersion == resource.data.get('scheduleVersion', 0) + 1));
+  allow delete: if bOwner(tripId);
+
+  match /members/{userId} {
+    // An authenticated user may check their own membership, including a missing
+    // document. Listing the whole trip remains limited to its members/owner.
+    allow get: if bOwner(tripId) || bMember(tripId)
+      || (bSignedIn() && userId == request.auth.uid);
+    allow list: if bOwner(tripId) || bMember(tripId);
+    allow create: if bOwnerAfter(tripId)
+      && request.resource.data.userId == userId
+      && request.resource.data.tripId == tripId;
+    allow update: if (bOwner(tripId)
+        || (bMember(tripId) && userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['jpScore'])))
+      && request.resource.data.userId == userId
+      && request.resource.data.tripId == tripId;
+    allow delete: if bOwner(tripId)
+      && userId != get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId;
+  }
+
+  match /blocks/{blockId} {
+    allow read: if bOwner(tripId) || bMember(tripId);
+    allow create, update: if bMember(tripId)
+      && request.resource.data.tripId == tripId;
+    allow delete: if bMember(tripId);
+  }
+}

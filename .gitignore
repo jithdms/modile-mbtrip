@@ -17,3 +17,6 @@ app/google-services.json
 
 # 개인 Android Studio 설정은 올리지 않음 (통합 10/11)
 /.idea/
+
+# Local historical server-rule backups
+/firebase/firestore.before-*.rules

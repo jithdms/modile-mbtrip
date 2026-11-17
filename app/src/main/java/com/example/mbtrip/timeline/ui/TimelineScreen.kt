@@ -45,6 +45,8 @@ import com.example.mbtrip.timeline.model.BlockStatus
 import com.example.mbtrip.timeline.model.Member
 import com.example.mbtrip.timeline.model.TimeMarker
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import com.example.mbtrip.recommendation.RecommendationDialog
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -69,22 +71,40 @@ fun TimelineScreen(
     now: LocalTime? = null,
     onInviteClick: () -> Unit = {},
     onVoteClick: (Block) -> Unit = {},
+    onBlocksChange: suspend (List<Block>, List<Block>) -> Unit = { _, _ -> },
 ) {
     // 2주차에 ViewModel + StateFlow(Firestore 리스너)로 옮길 상태
-    var blocks by remember { mutableStateOf(initialBlocks) }
+    var blocks by remember(tripId, initialBlocks) { mutableStateOf(initialBlocks) }
     val dates = remember(tripStart, tripEnd) { tripDates(tripStart, tripEnd) }
     var selectedIndex by rememberSaveable { mutableIntStateOf(0) }
     val selectedDate = dates.getOrNull(selectedIndex) ?: dates.first()
     var editor by remember { mutableStateOf<EditorState?>(null) }
     var choosingKind by remember { mutableStateOf(false) }
+    var recommending by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val toast: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
+    val persist: (List<Block>, () -> Unit) -> Unit = { next, onSaved ->
+        if (!saving) {
+            val before = blocks
+            saving = true
+            scope.launch {
+                try { onBlocksChange(before, next); blocks = next; onSaved() }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) { toast(e.message ?: "일정을 저장하지 못했어요.") }
+                finally { saving = false }
+            }
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
             MemberBar(members, onInviteClick)
+            TextButton(onClick = { recommending = true }, enabled = !saving) { Text("맛집·카페 추천") }
+            if (saving) Text("일정을 저장하고 있어요.", Modifier.padding(horizontal = 16.dp))
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }
 
@@ -93,15 +113,16 @@ fun TimelineScreen(
                 dayBlocks = dayBlocks,
                 markers = markers.filter { it.date == selectedDate },
                 now = now,
-                onBlockClick = { editor = EditorState(it, isNew = false) },
-                onBlockMoved = { block, requested, window ->
+                onBlockClick = { if (!saving) editor = EditorState(it, isNew = false) },
+                onBlockMoved = move@ { block, requested, window ->
+                    if (saving) return@move
                     when (val r = moveBlock(blocks, block.id, requested, window)) {
                         is EditResult.Ok -> {
                             val moved = r.blocks.first { it.id == block.id }
                             if (block.kind == BlockKind.FIXED && block.status == BlockStatus.CONFIRMED &&
                                 moved.status == BlockStatus.PROPOSED
                             ) toast("확정 블록을 옮겨서 '제안됨'으로 바뀌었어요.")
-                            blocks = r.blocks
+                            persist(r.blocks) {}
                         }
                         is EditResult.Error -> toast(r.message)
                     }
@@ -111,7 +132,7 @@ fun TimelineScreen(
         }
 
         FloatingActionButton(
-            onClick = { choosingKind = true },
+            onClick = { if (!saving) choosingKind = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
             containerColor = Color(0xFF1E1E1E),
             contentColor = Color.White,
@@ -136,6 +157,14 @@ fun TimelineScreen(
         )
     }
 
+    if (recommending) RecommendationDialog(
+        blocks = blocks, members = members, tripId = tripId, date = selectedDate,
+        onDismiss = { if (!saving) recommending = false },
+        onApply = { day ->
+            persist(blocks.filter { it.date != selectedDate } + day) { recommending = false; toast("추천 일정을 저장했어요.") }
+        },
+    )
+
     editor?.let { st ->
         BlockEditorSheet(
             original = st.block,
@@ -145,13 +174,13 @@ fun TimelineScreen(
             onSave = { edited ->
                 val r = if (st.isNew) addBlock(blocks, edited) else updateBlock(blocks, st.block, edited)
                 when (r) {
-                    is EditResult.Ok -> { blocks = r.blocks; editor = null }
+                    is EditResult.Ok -> persist(r.blocks) { editor = null }
                     is EditResult.Error -> toast(r.message)
                 }
             },
             onDelete = {
                 when (val r = deleteBlock(blocks, st.block.id)) {
-                    is EditResult.Ok -> { blocks = r.blocks; editor = null; toast("블록을 삭제했어요.") }
+                    is EditResult.Ok -> persist(r.blocks) { editor = null; toast("블록을 삭제했어요.") }
                     is EditResult.Error -> toast(r.message)
                 }
             },

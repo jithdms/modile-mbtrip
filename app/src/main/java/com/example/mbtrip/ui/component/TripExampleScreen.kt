@@ -1,6 +1,10 @@
 package com.example.mbtrip.ui.component
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,12 +15,20 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun TripExampleScreen(
     onNavigateBack: () -> Unit = {},
-    onNavigateNext: () -> Unit = {}
+    onNavigateNext: () -> Unit = {},
+    onCreateTrip: ((String, String, String, String) -> Unit)? = null,
+    onDiagnosisClick: () -> Unit = {},
+    onOpenTripClick: () -> Unit = {},
+    onJoinTripClick: () -> Unit = {},
+    onCurrentTripClick: (() -> Unit)? = null,
+    isCreating: Boolean = false,
+    error: String? = null,
+    accountContent: @Composable () -> Unit = {},
 ) {
     // 입력값 상태 관리 (출발, 도착, 날짜, 명수)
     var departure by remember { mutableStateOf("학교") }
-    var arrival by remember { mutableStateOf("집") }
-    var dateRange by remember { mutableStateOf("2026.10.01 ~ 2026.10.03") }
+    var arrival by remember { mutableStateOf("시흥") }
+    var dateRange by remember { mutableStateOf("${LocalDate.now().format(DateTimeFormatter.ofPattern("uuuu.MM.dd"))} ~ ${LocalDate.now().plusDays(1).format(DateTimeFormatter.ofPattern("uuuu.MM.dd"))}") }
     var headcount by remember { mutableStateOf("3 명") }
 
     Scaffold(
@@ -52,9 +64,19 @@ fun TripExampleScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(20.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            accountContent()
+            Row {
+                TextButton(onClick = onDiagnosisClick, enabled = !isCreating) { Text("J-P 진단하기") }
+                TextButton(onClick = onOpenTripClick, enabled = !isCreating) { Text("여행 불러오기") }
+                if (onCurrentTripClick != null) TextButton(onClick = onCurrentTripClick, enabled = !isCreating) { Text("현재 여행") }
+            }
+            TextButton(onClick = onJoinTripClick, enabled = !isCreating) { Text("초대 코드로 참가") }
+            if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
+            if (isCreating) Text("여행을 저장하고 있어요.")
             // 상단 입력 카드 영역 (기획안 시안 반영)
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -139,7 +161,12 @@ fun TripExampleScreen(
             // 하단 생성하기 버튼 (우리가 만든 MBTripButton 활용)
             MBTripButton(
                 text = "생성하기",
-                onClick = onNavigateNext,
+                onClick = {
+                    if (!isCreating) {
+                        val create = onCreateTrip
+                        if (create == null) onNavigateNext() else create(departure, arrival, dateRange, headcount)
+                    }
+                },
                 isPrimary = true,
                 modifier = Modifier.padding(bottom = 16.dp)
             )

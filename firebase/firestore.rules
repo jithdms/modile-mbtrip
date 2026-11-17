@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function member(tripId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+    function owner(tripId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/trips/$(tripId)).data.get('ownerId', '') == request.auth.uid;
+    }
+    function ownerAfter(tripId) {
+      return signedIn()
+        && getAfter(/databases/$(database)/documents/trips/$(tripId)).data.get('ownerId', '') == request.auth.uid;
+    }
+    function participant(tripId) {
+      return member(tripId) || owner(tripId);
+    }
+    function validScore(data) {
+      return !('jpScore' in data) || (data.jpScore is int && data.jpScore >= 0 && data.jpScore <= 100);
+    }
+    function validInvite(tripId, userId, data) {
+      let code = data.get('inviteCode', '');
+      let before = get(/databases/$(database)/documents/tripInvites/$(code)).data;
+      let after = getAfter(/databases/$(database)/documents/tripInvites/$(code)).data;
+      return signedIn() && request.auth.uid == userId
+        && code.matches('[0-9A-F]{32}')
+        && before.tripId == tripId && before.usedBy == ''
+        && before.expiresAt > request.time
+        && get(/databases/$(database)/documents/trips/$(tripId)).data.inviteCode == code
+        && after.usedBy == userId && after.usedAt == request.time
+        && data.keys().hasOnly(['userId', 'tripId', 'nickname', 'handle', 'jpScore', 'inviteCode'])
+        && data.nickname is string && data.nickname.size() > 0 && data.nickname.size() <= 20
+        && data.handle is string && data.handle.size() <= 40;
+    }
+    match /tripInvites/{code} {
+      // Exact token lookup only: no invitation or trip directory is exposed.
+      allow get: if signedIn() && code.matches('[0-9A-F]{32}');
+      allow list: if false;
+      allow create: if signedIn() && code.matches('[0-9A-F]{32}')
+        && request.resource.data.keys().hasOnly(['tripId', 'ownerId', 'expiresAt', 'usedBy'])
+        && request.resource.data.ownerId == request.auth.uid
+        && owner(request.resource.data.tripId)
+        && getAfter(/databases/$(database)/documents/trips/$(request.resource.data.tripId)).data.inviteCode == code
+        && request.resource.data.usedBy == ''
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(24, 'h');
+      allow update: if signedIn()
+        && resource.data.usedBy == '' && resource.data.expiresAt > request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt'])
+        && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
+        && get(/databases/$(database)/documents/trips/$(resource.data.tripId)).data.inviteCode == code
+        && !exists(/databases/$(database)/documents/trips/$(resource.data.tripId)/members/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/trips/$(resource.data.tripId)/members/$(request.auth.uid)).data.inviteCode == code;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      // Authenticated profile search remains available; nobody writes another user's profile.
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == userId && validScore(request.resource.data);
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+    match /trips/{tripId} {
+      allow read: if participant(tripId);
+      allow create: if signedIn()
+        && request.resource.data.tripId == tripId
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.scheduleVersion == 0;
+      allow update: if request.resource.data.get('ownerId', null) == resource.data.get('ownerId', null)
+        && request.resource.data.get('tripId', tripId) == resource.data.get('tripId', tripId)
+        && (owner(tripId)
+          || (member(tripId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scheduleVersion'])
+            && request.resource.data.scheduleVersion == resource.data.get('scheduleVersion', 0) + 1));
+      allow delete: if owner(tripId);
+
+      match /members/{userId} {
+        // A removed user can check their own missing membership, but cannot list the trip.
+        allow get: if (signedIn() && request.auth.uid == userId) || participant(tripId);
+        allow list: if participant(tripId);
+        allow create: if (ownerAfter(tripId) || validInvite(tripId, userId, request.resource.data))
+          && request.resource.data.userId == userId
+          && request.resource.data.tripId == tripId
+          && validScore(request.resource.data);
+        allow update: if (owner(tripId)
+            || (member(tripId) && request.auth.uid == userId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['jpScore'])))
+          && request.resource.data.userId == userId
+          && request.resource.data.tripId == tripId
+          && validScore(request.resource.data);
+        // Owners may clean up their own trip; the normal app prevents removing its owner.
+        allow delete: if owner(tripId);
+      }
+      match /blocks/{blockId} {
+        allow read: if participant(tripId);
+        allow create, update: if participant(tripId) && request.resource.data.tripId == tripId;
+        allow delete: if participant(tripId);
+
+        match /votes/{userId} {
+          allow read: if participant(tripId);
+          allow create, update: if participant(tripId) && request.auth.uid == userId
+            && request.resource.data.voterId == request.auth.uid
+            && request.resource.data.blockId == blockId
+            && request.resource.data.value in ['agree', 'disagree'];
+          allow delete: if participant(tripId) && (request.auth.uid == userId || owner(tripId));
+        }
+        match /comments/{commentId} {
+          allow read: if participant(tripId);
+          allow create: if participant(tripId)
+            && request.resource.data.authorId == request.auth.uid
+            && request.resource.data.blockId == blockId;
+          allow update: if participant(tripId) && resource.data.authorId == request.auth.uid
+            && request.resource.data.authorId == resource.data.authorId
+            && request.resource.data.blockId == blockId;
+          allow delete: if participant(tripId) && (resource.data.authorId == request.auth.uid || owner(tripId));
+        }
+      }
+    }
+  }
+}

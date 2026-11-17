@@ -138,7 +138,7 @@
                     android:layout_height="wrap_content"
                     android:text="50%"
                     android:textColor="#171717"
-                    android:textSize="56sp"
+                    android:textSize="28sp"
                     android:textStyle="bold" />
 
                 <LinearLayout

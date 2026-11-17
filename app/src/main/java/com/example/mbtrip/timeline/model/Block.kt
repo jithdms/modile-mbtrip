@@ -34,6 +34,10 @@ data class Block(
     val memo: String? = null,
     val todo: String = "",
     val transport: Transport? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
+    val address: String? = null,
+    val deleteRequested: Boolean = false,
 ) {
     init {
         require(start < end) { "Block($id): start($start) 는 end($end) 보다 빨라야 합니다." }
@@ -115,4 +119,6 @@ data class Member(
     val jpScore: Int, // 0(J) ~ 100(P), Firestore convention
     /** UI enrichment derived from the associated Trip dates; not stored on Member. */
     val isTraveling: Boolean = false,
+    val photoUrl: String? = null,
+    val hasDiagnosis: Boolean = true,
 )
