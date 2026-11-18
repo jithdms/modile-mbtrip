@@ -140,6 +140,7 @@ class FirebaseLiveIntegrationTest {
                 assertTrue("Stale schedules must be rejected", stale is IllegalArgumentException)
 
                 step("concurrent_schedule_conflict")
+                val versionBeforeConflict = tripRef.get(Source.SERVER).await().getLong("scheduleVersion")!!
                 val concurrent = coroutineScope {
                     val a = async { runCatching { owner.saveBlocks(active, edited, edited.mapIndexed { i, b -> if (i == 0) b.copy(memo = "동시 편집 A") else b }) } }
                     val b = async { runCatching { guest.saveBlocks(joined, edited, edited.mapIndexed { i, block -> if (i == 0) block.copy(memo = "동시 편집 B") else block }) } }
@@ -151,6 +152,9 @@ class FirebaseLiveIntegrationTest {
                 Log.i("MBTripFirebaseCheck", "CONFLICT_ERROR " + conflictChain.joinToString(" -> ") { code(it) + ":" + it.message })
                 assertTrue("Conflicting schedule must be rejected by the stale-data guard", conflictChain.any { it is IllegalArgumentException })
 
+                assertEquals(versionBeforeConflict + 1, tripRef.get(Source.SERVER).await().getLong("scheduleVersion"))
+                val winnerMemo = if (concurrent[0].isSuccess) "동시 편집 A" else "동시 편집 B"
+                assertEquals(winnerMemo, tripRef.collection("blocks").document(edited.first().id).get(Source.SERVER).await().getString("memo"))
                 step("reject_guest_removal")
                 val forbidden = runCatching { guest.removeMember(joined, ownerUid) }.exceptionOrNull()
                 assertTrue("Only the trip owner can remove companions", forbidden is IllegalArgumentException)

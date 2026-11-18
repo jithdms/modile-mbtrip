@@ -69,7 +69,10 @@ object ItineraryAllocator {
             if (fixedMinutes >= targetFixed) break
             val duration = activity.durationMinutes
             if (targetFixed - fixedMinutes < duration) continue
-            val slot = firstGap(result, dayStart, dayEnd, duration) ?: continue
+            val windowStart = maxOf(dayStart, activity.notBefore)
+            val windowEnd = minOf(dayEnd, activity.notAfter)
+            if (windowStart >= windowEnd) continue
+            val slot = firstGap(result, windowStart, windowEnd, duration) ?: continue
             result += Block(
                 id = nextId("auto", serial++), tripId = tripId, date = date,
                 start = slot, end = slot.plusMinutes(duration.toLong()), kind = BlockKind.FIXED,
@@ -93,7 +96,9 @@ object ItineraryAllocator {
     private fun firstGap(blocks: List<Block>, start: LocalTime, end: LocalTime, duration: Int): LocalTime? {
         var cursor = start
         for (block in blocks.sortedBy { it.start }) {
-            if (java.time.Duration.between(cursor, block.start).toMinutes() >= duration) return cursor
+            if (block.end <= cursor) continue
+            if (block.start >= end) break
+            if (java.time.Duration.between(cursor, minOf(block.start, end)).toMinutes() >= duration) return cursor
             if (cursor < block.end) cursor = block.end
         }
         return cursor.takeIf { java.time.Duration.between(it, end).toMinutes() >= duration }
@@ -108,6 +113,9 @@ object ItineraryAllocator {
     private fun noOverlap(blocks: List<Block>): Boolean = blocks.sortedBy { it.start }.zipWithNext().all { (a, b) -> a.end <= b.start }
 }
 
-data class PlannedActivity(val title: String, val durationMinutes: Int, val place: String? = null) {
-    init { require(title.isNotBlank() && durationMinutes > 0) }
+data class PlannedActivity(
+    val title: String, val durationMinutes: Int, val place: String? = null,
+    val notBefore: LocalTime = LocalTime.MIN, val notAfter: LocalTime = LocalTime.MAX,
+) {
+    init { require(title.isNotBlank() && durationMinutes > 0 && notBefore < notAfter) }
 }

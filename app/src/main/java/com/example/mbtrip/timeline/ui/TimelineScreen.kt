@@ -107,7 +107,7 @@ fun TimelineScreen(
                 Box(Modifier.weight(1f)) { MemberBar(members, onInviteClick) }
                 if (onHomeClick != null) HomeButton(onHomeClick)
             }
-            TextButton(onClick = { recommending = true }, enabled = !saving) { Text("맛집·카페 추천") }
+            TextButton(onClick = { recommending = true }, enabled = !saving) { Text("맛집·카페·관광 추천") }
             if (saving) Text("일정을 저장하고 있어요.", Modifier.padding(horizontal = 16.dp))
             HorizontalDivider()
             DayTabs(dates, selectedIndex) { selectedIndex = it }

@@ -3,6 +3,7 @@ package com.example.mbtrip.travel
 import android.content.Context
 import com.example.mbtrip.timeline.model.*
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Source
@@ -156,6 +157,7 @@ class TravelRepository(
         val changed = (previous.keys + next.keys).filter { previous[it] != next[it] }
         if (changed.isEmpty()) return
         require(before.size + changed.size < 450) { "일정이 너무 많아요. 날짜별로 나눠 저장해주세요." }
+        try {
         db.runTransaction { tx ->
             val current = tx.get(ref)
             require((current.getLong("scheduleVersion") ?: 0L) == version) { "다른 사람이 일정을 바꿨어요. 다시 시도해주세요." }
@@ -173,5 +175,21 @@ class TravelRepository(
             }
             tx.update(ref, "scheduleVersion", version + 1)
         }.await()
+        } catch (error: FirebaseFirestoreException) {
+            // A member's stale scheduleVersion write can fail the server's +1 rule
+            // before Firestore retries the transaction. Reclassify only after fresh
+            // server reads prove that this same user is still a member and the
+            // schedule advanced. Removed users and genuine permission errors stay denied.
+            val conflict = if (error.code == FirebaseFirestoreException.Code.PERMISSION_DENIED && auth.currentUser?.uid == userId) {
+                runCatching {
+                    val current = ref.get(Source.SERVER).await()
+                    val membership = ref.collection("members").document(userId).get(Source.SERVER).await()
+                    auth.currentUser?.uid == userId && membership.exists() &&
+                        (current.getLong("scheduleVersion") ?: 0L) > version
+                }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it; false }
+            } else false
+            if (conflict) throw IllegalArgumentException("다른 사람이 일정을 바꿨어요. 최신 일정을 확인한 뒤 다시 시도해주세요.", error)
+            throw error
+        }
     }
 }

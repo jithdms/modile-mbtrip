@@ -1,6 +1,16 @@
 package com.example.mbtrip.recommendation
 
-enum class PlaceCategory(val label: String) { RESTAURANT("맛집"), CAFE("카페") }
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.DayOfWeek
+import java.time.MonthDay
+
+enum class PlaceCategory(val label: String, val defaultMinutes: Int) {
+    RESTAURANT("맛집", 60), CAFE("카페", 40), ATTRACTION("관광", 60), EXPERIENCE("체험", 120)
+}
+data class VisitHours(val opens: LocalTime, val closes: LocalTime) {
+    init { require(opens < closes) }
+}
 enum class SiheungArea(val label: String) {
     MULWANG("물왕·목감"), OIDO("오이도"), GEOBUKSEOM("거북섬"),
     BAEGOT("배곧"), JEONGWANG("정왕"), NORTH("대야·신천·은행·계수"),
@@ -16,23 +26,32 @@ data class SiheungPlace(
     val rank: Int,
     val description: String,
     val sourceUrl: String,
-    val durationMinutes: Int = if (category == PlaceCategory.RESTAURANT) 60 else 40,
+    val durationMinutes: Int = category.defaultMinutes,
+    val address: String? = null,
+    val hours: VisitHours? = null,
+    val closedWeekdays: Set<DayOfWeek> = emptySet(),
+    val closedAnnualDays: Set<MonthDay> = emptySet(),
+    val needsVisitCheck: Boolean = false,
+    val needsReservationTime: Boolean = false,
+    val visitNote: String? = null,
 ) {
     init {
         require(id.isNotBlank() && name.isNotBlank() && rank > 0 && durationMinutes >= 20)
         require(sourceUrl.startsWith("https://"))
     }
-    val mapQuery: String get() = "경기도 시흥시 $name"
+    val mapQuery: String get() = address?.let { "$it $name" } ?: "경기도 시흥시 $name"
+    fun regularlyClosedOn(date: LocalDate) = date.dayOfWeek in closedWeekdays ||
+        MonthDay.from(date) in closedAnnualDays
 }
 
 object SiheungPlaces {
-    const val CURATED_ON = "2026-11-17"
+    const val CURATED_ON = "2026-11-18"
     private fun food(id: String, name: String, area: SiheungArea, rank: Int, description: String, rid: String) =
         SiheungPlace(id, name, PlaceCategory.RESTAURANT, area, rank, description, "https://www.diningcode.com/profile.php?rid=$rid")
     private fun cafe(id: String, name: String, area: SiheungArea, rank: Int, description: String, rid: String) =
         SiheungPlace(id, name, PlaceCategory.CAFE, area, rank, description, "https://www.diningcode.com/profile.php?rid=$rid")
 
-    val all: List<SiheungPlace> = listOf(
+    private val initialPlaces: List<SiheungPlace> = listOf(
         food("food01", "본가 만두전골전문점", SiheungArea.MULWANG, 1, "수제만두·전골", "GgJSKRSGqbBJ"),
         food("food02", "봉순게장 물왕리점", SiheungArea.MULWANG, 2, "간장게장·양념게장 정식", "2xcnCZrPQN37"),
         food("food03", "청춘조개 오이도본점", SiheungArea.OIDO, 3, "조개구이·해산물", "8xhT5X6mxj8p"),
@@ -77,4 +96,5 @@ object SiheungPlaces {
         cafe("cafe19", "카페 제니래빗", SiheungArea.CENTRAL, 19, "북카페·들판 전망", "isgeOwXiYs4Y"),
         cafe("cafe20", "카페더피치", SiheungArea.JEONGWANG, 20, "크로플·라떼", "HNrwWdhJBYcb"),
     )
+    val all: List<SiheungPlace> = initialPlaces + AdditionalSiheungPlaces.all
 }
