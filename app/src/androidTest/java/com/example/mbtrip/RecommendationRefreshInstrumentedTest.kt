@@ -30,16 +30,17 @@ class RecommendationRefreshInstrumentedTest {
         compose.onNodeWithText("일정에 반영").performClick()
         compose.runOnIdle { assertTrue(applied!!.contains(booking)) }
     }
-    @Test fun experienceRequiresOperationCheckAndValidReservationTime() {
+    @Test fun onlyRestaurantAndCafeCategoriesAreShown() {
         compose.setContent { MaterialTheme { RecommendationDialog(emptyList(), listOf(Member("a", "여행자", "@a", 50)), "trip", LocalDate.of(2026,11,18), {}, {}) } }
-        compose.onNodeWithText("체험").performClick()
-        compose.onNodeWithContentDescription("선택: 웨이브파크 서핑").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("운영확인: 웨이브파크 서핑").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("선택: 웨이브파크 서핑").performScrollTo().performClick()
+        compose.onNodeWithText("✓ 맛집").assertExists()
+        compose.onNodeWithText("경기도 시흥시 동서로811번길 33").assertExists()
+        compose.onNodeWithText("관광").assertDoesNotExist()
+        compose.onNodeWithText("체험").assertDoesNotExist()
+        compose.onNodeWithText("카페").performClick()
+        compose.onNodeWithText("✓ 카페").assertExists()
+        compose.onNodeWithText("예약 시작 HH:mm").assertDoesNotExist()
+        compose.onAllNodes(isToggleable())[0].assertIsEnabled().performClick()
         compose.onNodeWithText("배분 미리보기").performClick()
-        compose.onNodeWithText("일정에 반영").assertDoesNotExist()
-        compose.onNodeWithContentDescription("예약시각: 웨이브파크 서핑").performScrollTo().performTextInput("14:00")
-        compose.onNodeWithText("배분 미리보기").performClick()
-        compose.onNodeWithText("일정에 반영").assertIsDisplayed()
+        compose.onNodeWithText("일정에 반영").assertExists()
     }
 }

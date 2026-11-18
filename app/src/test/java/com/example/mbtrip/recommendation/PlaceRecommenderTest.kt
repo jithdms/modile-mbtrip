@@ -11,14 +11,16 @@ class PlaceRecommenderTest {
     private fun preview(existing: List<Block> = emptyList(), candidates: List<SiheungPlace> = SiheungPlaces.all.filter { it.category == PlaceCategory.RESTAURANT || it.category == PlaceCategory.CAFE }) =
         PlaceRecommender.previewDay(existing, "trip", date, LocalTime.of(9, 0), LocalTime.of(17, 0), listOf(0, 100), candidates)
 
-    @Test fun catalogHasTwentyRestaurantsAndTwentyCafesWithUniqueIdsAndSources() {
+    @Test fun catalogHasOnlyTwentyThreeRestaurantsAndTwentyThreeCafesWithUniqueIdsAndSources() {
+        assertEquals(46, SiheungPlaces.all.size)
+        assertEquals(2, PlaceCategory.entries.size)
         assertEquals(SiheungPlaces.all.size, SiheungPlaces.all.map { it.id }.toSet().size)
         (1..20).forEach { assertTrue(SiheungPlaces.all.any { p -> p.id == "food%02d".format(it) }); assertTrue(SiheungPlaces.all.any { p -> p.id == "cafe%02d".format(it) }) }
         listOf(PlaceCategory.RESTAURANT, PlaceCategory.CAFE).forEach { category ->
             val places = SiheungPlaces.all.filter { it.category == category }
-            assertTrue(places.size >= 20)
+            assertEquals(23, places.size)
             assertEquals((1..places.size).toList(), places.map { it.rank })
-            assertTrue(places.all { it.sourceUrl.startsWith("https://") && it.mapQuery.startsWith("경기도 시흥시 ") })
+            assertTrue(places.all { !it.address.isNullOrBlank() && it.sourceUrl.startsWith("https://") && it.mapQuery.startsWith("경기도 시흥시 ") })
         }
     }
     @Test fun categoryAreaTimeAndExclusionsAreAllRespected() {
