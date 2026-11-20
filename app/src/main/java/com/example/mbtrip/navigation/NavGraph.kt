@@ -17,7 +17,9 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +103,7 @@ object AppIntro {
 fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+<<<<<<< HEAD
     val memberRepository = MemberRepository()
     // 앱을 켜면 로그인한 사람의 프로필 · 내 여행 목록을 서버에서 받아 둔다
     LaunchedEffect(Unit) {
@@ -124,6 +127,10 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
             else -> Screen.Landing.route
         }
     }
+=======
+    val memberRepository = MemberRepository()
+    val friends = remember { FakeBlocks.members.toMutableStateList() }
+>>>>>>> origin/soeun
     NavHost(
         navController = navController,
         startDestination = startRoute,
@@ -343,7 +350,18 @@ fun MBTripNavGraph(navController: NavHostController = rememberNavController()) {
         }
         // 친구 리스트 (신소율) — + 로 친구 추가, 친구 모달에서 삭제
         composable(Screen.Friends.route) {
+<<<<<<< HEAD
             FriendListScreen(onBack = { navController.popBackStack() })
+=======
+            FriendListScreen(
+                friends = friends,
+                onBack = { navController.popBackStack() },
+                onDeleteFriend = { friend ->
+                    memberRepository.removeMember(FakeBlocks.TRIP_ID, friend.userId)
+                    friends.removeAll { it.userId == friend.userId }
+                },
+            )
+>>>>>>> origin/soeun
         }
         // 마이페이지
         composable(Screen.MyPage.route) {

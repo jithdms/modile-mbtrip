@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<<<<<<< HEAD
 <!-- 결과 J↔P 막대: P 쪽(민트) 위에 J 쪽(아쿠아) -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@android:id/background">
@@ -14,5 +15,21 @@
                 <corners android:radius="999dp" />
             </shape>
         </scale>
+=======
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <corners android:radius="8dp" />
+            <solid android:color="#6D86A5" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip android:clipOrientation="horizontal" android:gravity="left">
+            <shape android:shape="rectangle">
+                <corners android:radius="8dp" />
+                <solid android:color="#111111" />
+            </shape>
+        </clip>
+>>>>>>> origin/soeun
     </item>
 </layer-list>
