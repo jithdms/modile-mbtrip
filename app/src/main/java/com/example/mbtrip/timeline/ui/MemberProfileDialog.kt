@@ -1,5 +1,22 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.ui.theme.Muted
+import com.example.mbtrip.ui.design.MBIcon
+import com.example.mbtrip.R
+import com.example.mbtrip.ui.design.bouncyClick
+import androidx.compose.ui.draw.shadow
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Mint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,10 +55,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.mbtrip.timeline.model.Member
 
-private val CardBg = Color(0xFFF4F4F4)
-private val CardBlack = Color(0xFF1E1E1E)
-private val PColor = Color(0xFFA9E5A0) // P = 자유 블록 초록
-private val JColor = Color(0xFFAED6F1) // J = 확정 블록 하늘
+private val CardBg = Aqua50
+private val CardBlack = Ink
+private val PColor = Mint // P = 자유 블록 초록
+private val JColor = Aqua300 // J = 확정 블록 하늘
 
 /** jpScore(0 = J ~ 100 = P, 데이터 구조 문서 기준) → 한 줄 설명 */
 internal fun jpLabel(score: Int): String = when {
@@ -61,6 +78,11 @@ internal fun MemberProfileDialog(
     onDismiss: () -> Unit,
     /** null 이면 내보내기 버튼을 숨긴다 (예: 혼자 남았을 때) */
     onRemove: (() -> Unit)? = null,
+    /** 아래 빨간 버튼 글자 · 확인 창 문구 (친구 목록에서는 '친구 삭제') */
+    removeLabel: String = "동행에서 내보내기",
+    removeConfirmTitle: String = "${member.nickname} 님을 내보낼까요?",
+    removeConfirmText: String = "이 여행의 동행자 목록에서 빠지고, 일정표를 더 이상 볼 수 없어요. 다시 초대하면 돌아올 수 있어요.",
+    removeConfirmButton: String = "내보내기",
 ) {
     val score = member.jpScore.coerceIn(0, 100)
     var confirmRemove by remember { mutableStateOf(false) }
@@ -69,23 +91,36 @@ internal fun MemberProfileDialog(
             Modifier
                 .fillMaxWidth(0.82f)
                 .widthIn(max = 360.dp)
+                .enterPop(0, from = 0.85f)
                 .clip(RoundedCornerShape(20.dp))
-                .background(CardBg)
+                .background(Color.White)
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // 닫기
             Box(Modifier.fillMaxWidth()) {
                 Box(
-                    Modifier.align(Alignment.TopEnd).size(32.dp).clip(CircleShape).clickable(onClick = onDismiss),
+                    Modifier.align(Alignment.TopEnd).size(32.dp).bouncyClick(CircleShape, onClick = onDismiss),
                     contentAlignment = Alignment.Center,
-                ) { Text("✕", fontSize = 16.sp, color = TimelineColors.SubText) }
+                ) { MBIcon(R.drawable.ic_mb_close, size = 18.dp, tint = Muted, contentDescription = "닫기") }
             }
 
+            // 프로필 사진
             MemberAvatar(member, size = 96.dp)
             Spacer(Modifier.height(12.dp))
-            Text(member.nickname, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(member.nickname, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
             Text(member.handle, fontSize = 13.sp, color = TimelineColors.SubText)
+            // 여행 중인 친구
+            com.example.mbtrip.friends.Friends.travelingTo(member.userId)?.let { trip ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "✈ ${trip.ifBlank { "여행" }} 여행 중",
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Aqua700,
+                    modifier = Modifier
+                        .background(com.example.mbtrip.ui.theme.Aqua100, RoundedCornerShape(50))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                )
+            }
 
             // 한 줄 소개 (본인이 적은 글)
             Spacer(Modifier.height(12.dp))
@@ -93,7 +128,7 @@ internal fun MemberProfileDialog(
             Text(
                 if (bio.isNotEmpty()) "“${bio}”" else "아직 한 줄 소개가 없어요.",
                 fontSize = 14.sp,
-                color = if (bio.isNotEmpty()) Color(0xFF424242) else TimelineColors.Axis,
+                color = if (bio.isNotEmpty()) InkSoft else TimelineColors.Axis,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             )
@@ -106,12 +141,12 @@ internal fun MemberProfileDialog(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color.White)
-                    .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(14.dp))
+                    .border(1.dp, Line, RoundedCornerShape(14.dp))
                     .padding(14.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("여행 성향", fontSize = 13.sp, color = TimelineColors.SubText, modifier = Modifier.weight(1f))
-                    Text("J ${100 - score}% · P ${score}%", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("J ${100 - score}% · P ${score}%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Ink)
                 }
                 Spacer(Modifier.height(10.dp))
                 JpBar(score)
@@ -120,24 +155,21 @@ internal fun MemberProfileDialog(
                     Text("P 즉흥", fontSize = 11.sp, color = TimelineColors.SubText)
                 }
                 Spacer(Modifier.height(10.dp))
-                Text(jpLabel(score), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(jpLabel(score), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Aqua700)
             }
 
             Spacer(Modifier.height(16.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(CardBlack)
-                    .clickable(onClick = onDismiss),
-                contentAlignment = Alignment.Center,
-            ) { Text("닫기", color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center) }
+            com.example.mbtrip.ui.design.MBButton(
+                text = "닫기",
+                onClick = onDismiss,
+                style = com.example.mbtrip.ui.design.MBButtonStyle.Deep,
+                height = 48.dp,
+            )
 
             if (onRemove != null) {
                 Spacer(Modifier.height(4.dp))
                 TextButton(onClick = { confirmRemove = true }) {
-                    Text("동행에서 내보내기", color = TimelineColors.Error, fontSize = 13.sp)
+                    Text(removeLabel, color = TimelineColors.Error, fontSize = 13.sp)
                 }
             }
         }
@@ -146,11 +178,11 @@ internal fun MemberProfileDialog(
     if (confirmRemove && onRemove != null) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
-            title = { Text("${member.nickname} 님을 내보낼까요?") },
-            text = { Text("이 여행의 동행자 목록에서 빠지고, 일정표를 더 이상 볼 수 없어요. 다시 초대하면 돌아올 수 있어요.") },
+            title = { Text(removeConfirmTitle) },
+            text = { Text(removeConfirmText) },
             confirmButton = {
                 TextButton(onClick = { confirmRemove = false; onRemove() }) {
-                    Text("내보내기", color = TimelineColors.Error)
+                    Text(removeConfirmButton, color = TimelineColors.Error)
                 }
             },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("취소") } },
@@ -161,6 +193,8 @@ internal fun MemberProfileDialog(
 /** J(하늘) ─────●───── P(초록) 막대. ● 위치 = jpScore (0 = 왼쪽 J 끝, 100 = 오른쪽 P 끝) */
 @Composable
 private fun JpBar(score: Int) {
+    // 처음 열면 점이 J 끝에서 제자리로 미끄러져 간다
+    val pos by com.example.mbtrip.ui.design.animatedFill(score / 100f, durationMs = 900, delayMs = 300)
     BoxWithConstraints(Modifier.fillMaxWidth().height(18.dp)) {
         val dot = 18.dp
         Box(
@@ -174,11 +208,11 @@ private fun JpBar(score: Int) {
         Box(
             Modifier
                 .align(Alignment.CenterStart)
-                .offset(x = (maxWidth - dot) * (score / 100f))
+                .offset(x = (maxWidth - dot) * pos)
                 .size(dot)
                 .clip(CircleShape)
                 .background(Color.White)
-                .border(2.dp, CardBlack, CircleShape),
+                .border(3.dp, Aqua500, CircleShape),
         )
     }
 }

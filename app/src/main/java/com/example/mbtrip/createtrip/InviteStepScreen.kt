@@ -1,5 +1,7 @@
 package com.example.mbtrip.createtrip
 
+import androidx.compose.ui.graphics.SolidColor
+import com.example.mbtrip.R
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -24,7 +26,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,13 +41,40 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mbtrip.session.TripSession
+import com.example.mbtrip.ui.design.FillBar
+import com.example.mbtrip.ui.design.MBButton
+import com.example.mbtrip.ui.design.MBButtonStyle
+import com.example.mbtrip.ui.design.MBCard
+import com.example.mbtrip.ui.design.ScreenHeader
+import com.example.mbtrip.ui.design.SectionLabel
+import com.example.mbtrip.ui.design.SkyBackground
+import com.example.mbtrip.ui.design.SoftBadge
+import com.example.mbtrip.ui.design.animatedCount
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterFromBelow
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Faint
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.MBBrush
+import com.example.mbtrip.ui.theme.Mint
+import com.example.mbtrip.ui.theme.MintDeep
+import com.example.mbtrip.ui.theme.Muted
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Brush
 import com.example.mbtrip.timeline.data.TimelineDependencies
 import com.example.mbtrip.timeline.ui.BackButton
 import com.example.mbtrip.timeline.ui.MemberRow
 import java.time.format.DateTimeFormatter
 
-private val Black = Color(0xFF1E1E1E)
-private val Sub = Color(0xFF757575)
+private val Black = Ink
+private val Sub = Muted
 private val DATE = DateTimeFormatter.ofPattern("yyyy.MM.dd")
 
 /**
@@ -67,51 +98,53 @@ fun InviteStepScreen(
     val code = TripSession.inviteCode
     val context = LocalContext.current
 
-    Column(Modifier.fillMaxSize().background(Color.White)) {
-        Row(Modifier.padding(start = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            BackButton(onBack)
-            Text("친구 초대", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        }
+    SkyBackground(Modifier.fillMaxSize(), intensity = 0.7f) {
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(title = "친구 초대", onBack = onBack)
 
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
-            Text("함께 갈 친구를 초대해요", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Black)
-            val start = TripSession.startDate
-            val end = TripSession.endDate
-            Text(
-                buildString {
-                    append(TripSession.destination)
-                    if (start != null && end != null) append(" · ${start.format(DATE)} ~ ${end.format(DATE)}")
-                },
-                fontSize = 14.sp, color = Sub,
-            )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.enterFromBelow(1)) {
+                Column(Modifier.weight(1f)) {
+                    Text("함께 갈 친구를 초대해요", style = MaterialTheme.typography.headlineSmall, color = Black)
+                    Spacer(Modifier.height(4.dp))
+                    val start = TripSession.startDate
+                    val end = TripSession.endDate
+                    Text(
+                        buildString {
+                            append(TripSession.destination)
+                            if (start != null && end != null) append(" · ${start.format(DATE)} ~ ${end.format(DATE)}")
+                        },
+                        fontSize = 14.sp, color = Sub,
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
 
             // 지금 동행자 + [+] (누르면 검색·초대 모달)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFFF4F4F4))
-                    .padding(16.dp),
-            ) {
+            MBCard(Modifier.fillMaxWidth().enterFromBelow(2, distance = 36.dp), contentPadding = PaddingValues(18.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        if (planned != null) "동행자 ${members.size} / ${planned}명" else "동행자 ${members.size}명",
-                        fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionLabel("동행자", icon = R.drawable.ic_mb_group, modifier = Modifier.weight(1f))
+                        SoftBadge(if (planned != null) "${members.size} / ${planned}명" else "${members.size}명")
+                    }
+                    // 예정 인원 중 몇 명이 들어왔는지
+                    if (planned != null && planned > 0) {
+                        FillBar(members.size.toFloat() / planned, height = 6.dp)
+                    }
                     MemberRow(members = members, tripId = tripId, memberRepository = repo, avatarSize = 56.dp)
                     Text("+ 를 눌러 닉네임이나 @아이디로 친구를 찾아 초대하세요.", fontSize = 12.sp, color = Sub)
                 }
             }
 
             // 적정 확정 · 자유 비율
-            if (ratio != null) RatioCard(ratio)
+            if (ratio != null) Box(Modifier.enterFromBelow(3, distance = 36.dp)) { RatioCard(ratio) }
 
             // 초대코드
+            Box(Modifier.enterFromBelow(4, distance = 36.dp)) {
             CodeCard(
                 code = code,
                 onCopy = {
@@ -134,101 +167,104 @@ fun InviteStepScreen(
                     }
                 },
             )
+            }
             Spacer(Modifier.height(8.dp))
         }
 
         // 다음
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(Black)
-                    .clickable(onClick = onNext),
-                contentAlignment = Alignment.Center,
-            ) { Text("다음", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium) }
-            Spacer(Modifier.height(6.dp))
+        Column(
+            Modifier.padding(horizontal = 20.dp, vertical = 16.dp).enterFromBelow(5, distance = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            MBButton(text = "다음", onClick = onNext, style = MBButtonStyle.Brand)
+            Spacer(Modifier.height(8.dp))
             Text("친구는 나중에 일정표에서도 초대할 수 있어요.", fontSize = 12.sp, color = Sub)
         }
     }
+    }
 }
 
-/** 동행자 성향으로 계산한 적정 비율 */
+/** 동행자 성향으로 계산한 적정 비율 — 숫자는 올라가고 막대는 차오른다 */
 @Composable
 private fun RatioCard(ratio: GroupRatio) {
-    val shape = RoundedCornerShape(16.dp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .border(1.dp, Color(0xFFE0E0E0), shape)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("우리에게 맞는 일정 비율", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    MBCard(Modifier.fillMaxWidth(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("우리에게 맞는 일정 비율", icon = R.drawable.ic_mb_ratio)
+        val fixed by animatedCount(ratio.fixedPercent)
+        val free by animatedCount(ratio.freePercent)
         Row(verticalAlignment = Alignment.Bottom) {
-            Text("확정 ${ratio.fixedPercent}%", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E86C1))
-            Text("  ·  ", fontSize = 16.sp, color = Sub)
-            Text("자유 ${ratio.freePercent}%", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4F9A47))
+            Text("확정 $fixed%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = FixedText)
+            Text("  ·  ", fontSize = 16.sp, color = Faint)
+            Text("자유 $free%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MintDeep)
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .clip(RoundedCornerShape(50))
-                .background(FreeGreen),
-        ) {
-            Box(Modifier.fillMaxWidth(ratio.fixedPercent / 100f).fillMaxHeight().background(FixedBlue))
-        }
-        Text(ratio.reason, fontSize = 12.sp, color = Sub)
+        FillBar(
+            ratio.fixedPercent / 100f,
+            height = 12.dp,
+            track = FreeGreen,
+            fill = SolidColor(FixedBlue),
+        )
+        Text(ratio.reason, fontSize = 12.sp, color = Sub, lineHeight = 18.sp)
     }
 }
 
-/** 초대코드 — 크게 보여주고 복사·보내기 */
+/** 초대코드 — 한 글자씩 톡톡 튀어나오고 복사·보내기 */
 @Composable
 private fun CodeCard(code: String?, onCopy: () -> Unit, onShare: () -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Color(0xFFF4F4F4))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    MBCard(
+        Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("초대코드", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        Text(
-            code ?: "만드는 중…",
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 4.sp,
-            color = Black,
-        )
-        Text("친구가 앱에서 [초대코드로 참여하기]에 이 코드를 넣으면 바로 들어와요. 대소문자를 구분해요.", fontSize = 12.sp, color = Sub)
+        SectionLabel("초대코드", icon = R.drawable.ic_mb_key)
+        if (code == null) {
+            Text("만드는 중…", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Faint)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                code.forEachIndexed { i, ch ->
+                    Box(
+                        Modifier
+                            .enterPop(i, delayStepMs = 80, startDelayMs = 350, from = 0.3f)
+                            .size(width = 40.dp, height = 52.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White)
+                            .border(1.dp, Aqua300, RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            ch.toString(),
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Black,
+                        )
+                    }
+                }
+            }
+        }
+        Text("친구가 앱에서 [초대코드로 참여하기]에 이 코드를 넣으면 바로 들어와요. 대소문자를 구분해요.", fontSize = 12.sp, color = Sub, lineHeight = 18.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SmallPill("복사", enabled = code != null, onClick = onCopy)
-            SmallPill("보내기", enabled = code != null, onClick = onShare)
+            SmallPill("복사", R.drawable.ic_mb_copy, enabled = code != null, onClick = onCopy)
+            SmallPill("보내기", R.drawable.ic_mb_share, enabled = code != null, onClick = onShare)
         }
     }
 }
 
 @Composable
-private fun SmallPill(text: String, enabled: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(50)
-    Text(
-        text,
-        fontSize = 13.sp,
-        color = if (enabled) Black else Color(0xFFBDBDBD),
-        modifier = Modifier
-            .clip(shape)
-            .background(Color.White)
-            .border(1.dp, if (enabled) Black else Color(0xFFD6D6D6), shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp),
-    )
+private fun SmallPill(text: String, icon: Int, enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        Modifier
+            .bouncyClick(shape, enabled = enabled, onClick = onClick)
+            .background(Color.White, shape)
+            .border(1.dp, Line, shape)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        com.example.mbtrip.ui.design.MBIcon(icon, size = 16.dp, tint = if (enabled) Black else Faint)
+        Spacer(Modifier.width(6.dp))
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) Black else Faint)
+    }
 }
 
-private val FixedBlue = Color(0xFF5DADE2)
-private val FreeGreen = Color(0xFFA9E5A0)
+private val FixedBlue = Aqua500
+private val FixedText = Aqua700
+private val FreeGreen = Mint

@@ -10,6 +10,14 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.mbtrip.timeline.data.BlockRepository
 import com.example.mbtrip.timeline.fake.FakeBlocks
 import com.example.mbtrip.timeline.model.Block
+import com.example.mbtrip.timeline.model.BlockKind
+import com.example.mbtrip.timeline.model.BlockSource
+import com.example.mbtrip.timeline.model.BlockStatus
+import com.example.mbtrip.timeline.model.Transport
+import com.example.mbtrip.siheung.LatLng
+import com.example.mbtrip.siheung.RoutineStop
+import com.example.mbtrip.siheung.SiheungPlace
+import com.example.mbtrip.siheung.TourRoutine
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -136,10 +144,84 @@ class TimelineViewModel(
         }
     }
 
+    /**
+     * 추천 투어 루틴을 블록으로 넣는다 (1일차 → 여행 첫날).
+     * 장소 사이가 15분 이상 비면 이동 블록도 넣고, 이미 있는 일정과 겹치는 곳은 건너뛴다.
+     * @param locate 장소 좌표 찾기 (지도 핀용, 못 찾아도 장소 이름으로 넣는다)
+     */
+    fun applyRoutine(
+        routine: TourRoutine,
+        tripStart: LocalDate,
+        tripEnd: LocalDate,
+        locate: suspend (SiheungPlace) -> LatLng?,
+    ) {
+        viewModelScope.launch {
+            var list = current
+            val toSave = mutableListOf<Block>()
+            val usedIds = mutableSetOf<String>()
+            var skipped = 0
+            fun freshId(): String {
+                var id = repository.newId(tripId)
+                var n = 1
+                while (id in usedIds || list.any { it.id == id }) id = repository.newId(tripId) + "_" + n++
+                usedIds += id
+                return id
+            }
+            fun tryAdd(b: Block): Boolean = when (val r = addBlock(list, b)) {
+                is EditResult.Ok -> { list = r.blocks; toSave += r.blocks.first { it.id == b.id }; true }
+                is EditResult.Error -> false
+            }
+
+            routine.days.forEachIndexed { dayIndex, stops ->
+                val date = tripStart.plusDays(dayIndex.toLong())
+                if (date.isAfter(tripEnd)) return@forEachIndexed
+                var prev: RoutineStop? = null
+                stops.forEach { stop ->
+                    val p = stop.place
+                    // 앞 장소와 15분 이상 떨어져 있으면 이동 블록 (같은 동네면 도보, 아니면 자가용)
+                    prev?.let { pv ->
+                        if (java.time.Duration.between(pv.end, stop.start).toMinutes() >= 15) {
+                            val sameArea = pv.place?.area != null && pv.place?.area == p?.area
+                            tryAdd(
+                                Block(
+                                    id = freshId(), tripId = tripId, date = date, start = pv.end, end = stop.start,
+                                    kind = BlockKind.MOVE, status = BlockStatus.CONFIRMED, source = BlockSource.RECOMMEND,
+                                    transport = if (sameArea) Transport.WALK else Transport.CAR,
+                                ),
+                            )
+                        }
+                    }
+                    val ll = p?.let { runCatching { locate(it) }.getOrNull() }
+                    val ok = tryAdd(
+                        Block(
+                            id = freshId(), tripId = tripId, date = date, start = stop.start, end = stop.end,
+                            kind = BlockKind.FIXED, status = BlockStatus.CONFIRMED, source = BlockSource.RECOMMEND,
+                            title = stop.placeName, place = stop.placeName,
+                            tags = listOfNotNull(p?.category?.tag),
+                            memo = stop.tip,
+                            lat = ll?.lat, lng = ll?.lng, address = p?.address,
+                        ),
+                    )
+                    if (!ok) skipped++
+                    prev = stop
+                }
+            }
+            runCatching { toSave.forEach { repository.upsert(it) } }
+                .onSuccess {
+                    val places = toSave.count { it.kind == BlockKind.FIXED }
+                    _messages.tryEmit(
+                        "'${routine.title}' 순서대로 ${places}곳을 넣었어요." +
+                            if (skipped > 0) " (겹치는 ${skipped}곳은 건너뛰었어요)" else "",
+                    )
+                }
+                .onFailure { _messages.tryEmit("루틴을 넣지 못했어요. 인터넷 연결을 확인해 주세요.") }
+        }
+    }
+
     private fun save(block: Block) {
         viewModelScope.launch {
             runCatching { repository.upsert(block) }
-                .onFailure { _messages.tryEmit("저장하지 못했어요: ${it.message}") }
+                .onFailure { _messages.tryEmit("바꾸지 못했어요. 인터넷 연결을 확인해 주세요.") }
         }
     }
 

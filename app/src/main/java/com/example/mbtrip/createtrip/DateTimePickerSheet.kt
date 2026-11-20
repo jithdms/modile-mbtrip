@@ -1,5 +1,8 @@
 package com.example.mbtrip.createtrip
 
+import com.example.mbtrip.ui.design.MBIcon
+import com.example.mbtrip.R
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,7 +42,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.draw.drawBehind
+import com.example.mbtrip.ui.design.MBButton
+import com.example.mbtrip.ui.design.MBCalendarSheet
+import com.example.mbtrip.ui.design.MBMonthCalendar
+import com.example.mbtrip.ui.design.MBButtonStyle
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua200
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Muted
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,13 +76,13 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 
-private val Black = Color(0xFF1E1E1E)
-private val Gray = Color(0xFF9E9E9E)
-private val LightGray = Color(0xFFEDEDED)
-private val Disabled = Color(0xFFD6D6D6)
-private val SunRed = Color(0xFFE53935)
-private val SatBlue = Color(0xFF1E88E5)
-private val TodaySky = Color(0xFFAED6F1) // 일정표 확정 블록 하늘색
+private val Black = Ink
+private val Gray = Muted
+private val LightGray = Aqua100       // 고른 값 띠 · 같이 보여줄 날짜
+private val Disabled = Line
+private val SunRed = Coral
+private val SatBlue = Aqua700
+private val TodaySky = Aqua300        // 브랜드 하늘색
 
 internal val ItemH = 40.dp // 휠 한 줄 높이 (3줄이 보임)
 
@@ -78,7 +104,6 @@ internal fun DateTimePickerSheet(
     onDismiss: () -> Unit,
     onConfirm: (LocalDateTime) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val startDate = clampDate(initial.toLocalDate(), minDate, maxDate)
     var date by remember { mutableStateOf(startDate) }
     var month by remember { mutableStateOf(YearMonth.from(startDate)) }
@@ -89,180 +114,50 @@ internal fun DateTimePickerSheet(
 
     val picked = LocalDateTime.of(date, LocalTime.of(from12h(pm, hour12), minute))
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color.White,
-        dragHandle = null,
+    // 앱 공용 달력 모달 (방 만들기·여행 로그와 같은 모양)
+    MBCalendarSheet(
+        title = title,
+        onDismiss = onDismiss,
+        confirmText = "완료",
+        confirmEnabled = true,
+        onConfirm = { onConfirm(picked) },
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(top = 16.dp, bottom = 12.dp)
-                .navigationBarsPadding(),
-        ) {
-            // ── 제목 + ✕ ──
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Box(
-                    Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) { Text("✕", fontSize = 18.sp, color = Gray) }
-            }
-            Spacer(Modifier.height(12.dp))
-
-            // ── 달력 ──
-            MonthHeader(month, onPrev = { month = month.minusMonths(1) }, onNext = { month = month.plusMonths(1) })
-            Spacer(Modifier.height(8.dp))
-            CalendarGrid(
-                month = month,
-                selected = date,
-                marked = markedDate,
-                minDate = minDate,
-                maxDate = maxDate,
-                onPick = { date = it },
-            )
-
-            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = LightGray)
-
-            // ── 시간 휠 ──
-            Box(Modifier.fillMaxWidth().height(ItemH * 3), contentAlignment = Alignment.Center) {
-                // 가운데 줄 = 선택값 표시 띠
-                Box(
-                    Modifier.fillMaxWidth().height(ItemH)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(LightGray),
-                )
-                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Wheel(listOf("오전", "오후"), if (pm) 1 else 0, Modifier.width(72.dp)) { pm = it == 1 }
-                    Wheel((1..12).map { "$it" }, hour12 - 1, Modifier.width(64.dp)) { hour12 = it + 1 }
-                    Text(":", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Wheel((0..59).map { "%02d".format(it) }, minute, Modifier.width(64.dp)) { minute = it }
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Text(
-                previewText(picked),
-                fontSize = 15.sp, color = Black, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Black)
-                    .clickable { onConfirm(picked) },
-                contentAlignment = Alignment.Center,
-            ) { Text("완료", color = Color.White, fontSize = 16.sp) }
-        }
-    }
-}
-
-/* ───────────── 달력 ───────────── */
-
-@Composable
-private fun MonthHeader(month: YearMonth, onPrev: () -> Unit, onNext: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        ArrowCell("‹", onPrev)
-        Text(
-            "${month.year}년 ${month.monthValue}월",
-            fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-            modifier = Modifier.weight(1f),
+        // ── 달력 (하루 고르기) ──
+        MBMonthCalendar(
+            month = month,
+            onMonthChange = { month = it },
+            start = date,
+            end = null,
+            minDate = minDate,
+            maxDate = maxDate,
+            marked = setOfNotNull(markedDate),
+            onDayClick = { date = it },
         )
-        ArrowCell("›", onNext)
-    }
-}
 
-@Composable
-private fun ArrowCell(text: String, onClick: () -> Unit) {
-    Box(
-        Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { Text(text, fontSize = 24.sp, color = Black) }
-}
+        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
 
-@Composable
-private fun CalendarGrid(
-    month: YearMonth,
-    selected: LocalDate,
-    marked: LocalDate?,
-    minDate: LocalDate?,
-    maxDate: LocalDate?,
-    onPick: (LocalDate) -> Unit,
-) {
-    val today = remember { LocalDate.now() }
-    // 요일 줄
-    Row(Modifier.fillMaxWidth()) {
-        listOf("일", "월", "화", "수", "목", "금", "토").forEachIndexed { i, d ->
-            Text(
-                d, fontSize = 12.sp, textAlign = TextAlign.Center,
-                color = when (i) { 0 -> SunRed; 6 -> SatBlue; else -> Gray },
-                modifier = Modifier.weight(1f),
+        // ── 시간 휠 ──
+        Box(Modifier.fillMaxWidth().height(ItemH * 3), contentAlignment = Alignment.Center) {
+            // 가운데 줄 = 선택값 표시 띠
+            Box(
+                Modifier.fillMaxWidth().height(ItemH)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Aqua100),
             )
-        }
-    }
-    Spacer(Modifier.height(4.dp))
-    monthCells(month).chunked(7).forEach { week ->
-        Row(Modifier.fillMaxWidth()) {
-            week.forEach { day ->
-                Box(Modifier.weight(1f).height(42.dp), contentAlignment = Alignment.Center) {
-                    if (day != null) {
-                        DayCell(
-                            day = day,
-                            isSelected = day == selected,
-                            isMarked = day == marked,
-                            isToday = day == today,
-                            enabled = isSelectable(day, minDate, maxDate),
-                            onClick = { onPick(day) },
-                        )
-                    }
-                }
+            Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Wheel(listOf("오전", "오후"), if (pm) 1 else 0, Modifier.width(72.dp)) { pm = it == 1 }
+                Wheel((1..12).map { "$it" }, hour12 - 1, Modifier.width(64.dp)) { hour12 = it + 1 }
+                Text(":", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Wheel((0..59).map { "%02d".format(it) }, minute, Modifier.width(64.dp)) { minute = it }
             }
         }
-    }
-}
 
-@Composable
-private fun DayCell(
-    day: LocalDate,
-    isSelected: Boolean,
-    isMarked: Boolean,
-    isToday: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val textColor = when {
-        isSelected -> Color.White
-        !enabled -> Disabled
-        day.isSunday -> SunRed
-        day.isSaturday -> SatBlue
-        else -> Black
-    }
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(
-                when {
-                    isSelected -> Black
-                    isMarked -> LightGray
-                    else -> Color.Transparent
-                },
-            )
-            .then(if (isToday && !isSelected) Modifier.border(1.5.dp, TodaySky, CircleShape) else Modifier)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+        Spacer(Modifier.height(12.dp))
+        // 고른 날짜·시간
         Text(
-            "${day.dayOfMonth}",
-            fontSize = 15.sp,
-            color = textColor,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            previewText(picked),
+            fontSize = 14.sp, color = Aqua700, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

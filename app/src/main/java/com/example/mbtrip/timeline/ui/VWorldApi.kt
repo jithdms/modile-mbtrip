@@ -32,15 +32,16 @@ internal data class PlaceResult(
  * 가게명·장소명 검색 (시흥 안만). 순서: 장소(POI) → 도로명 주소 → 지번 주소.
  * 실패하면 빈 목록.
  */
-internal suspend fun vworldSearch(query: String): List<PlaceResult> = withContext(Dispatchers.IO) {
+internal suspend fun vworldSearch(query: String, addressFirst: Boolean = false): List<PlaceResult> = withContext(Dispatchers.IO) {
     val key = vworldKey
     if (key.isBlank() || query.isBlank()) return@withContext emptyList()
     val bbox = "${SiheungArea.WEST},${SiheungArea.SOUTH},${SiheungArea.EAST},${SiheungArea.NORTH}"
-    val tries = listOf(
-        "type=place",
-        "type=address&category=road",
-        "type=address&category=parcel",
-    )
+    // addressFirst = 주소를 알고 있을 때 (시흥 장소 목록) → 주소 검색을 먼저
+    val tries = if (addressFirst) {
+        listOf("type=address&category=road", "type=address&category=parcel", "type=place")
+    } else {
+        listOf("type=place", "type=address&category=road", "type=address&category=parcel")
+    }
     for (t in tries) {
         val url = "https://api.vworld.kr/req/search?service=search&request=search&version=2.0" +
             "&crs=EPSG:4326&size=10&page=1&format=json&errorformat=json" +

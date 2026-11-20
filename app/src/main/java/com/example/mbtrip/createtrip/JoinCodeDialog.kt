@@ -1,5 +1,7 @@
 package com.example.mbtrip.createtrip
 
+import com.example.mbtrip.ui.design.MBIcon
+import com.example.mbtrip.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
@@ -43,12 +46,38 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
+import com.example.mbtrip.ui.design.MBButton
+import com.example.mbtrip.ui.design.MBButtonStyle
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.design.shake
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Danger
+import com.example.mbtrip.ui.theme.DangerSoft
+import com.example.mbtrip.ui.theme.Field
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.MBBrush
+import com.example.mbtrip.ui.theme.Muted
 
 private const val CODE_LENGTH = 6
-private val Black = Color(0xFF1E1E1E)
-private val Sub = Color(0xFF757575)
-private val BoxIdle = Color(0xFFD6D6D6)
-private val ErrorRed = Color(0xFFD32F2F)
+private val Black = Ink
+private val Sub = Muted
+private val BoxIdle = Line
+private val ErrorRed = Danger
 
 /**
  * 방 만들기 화면의 [초대코드로 참여하기].
@@ -92,12 +121,19 @@ fun JoinCodeDialog(
             Modifier
                 .fillMaxWidth(0.88f)
                 .widthIn(max = 400.dp)
-                .clip(RoundedCornerShape(24.dp))
+                .enterPop(0, from = 0.85f)
+                .clip(RoundedCornerShape(20.dp))
                 .background(Color.White)
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+                .padding(horizontal = 20.dp, vertical = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("🔑", fontSize = 28.sp)
+            // 둥실 떠 있는 열쇠
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .background(Aqua100, RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center,
+            ) { MBIcon(R.drawable.ic_mb_key, size = 26.dp, tint = Aqua700) }
             Spacer(Modifier.height(8.dp))
             Text("초대코드로 참여하기", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Black)
             Spacer(Modifier.height(4.dp))
@@ -118,13 +154,15 @@ fun JoinCodeDialog(
                     imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { if (ready) onJoin(code) }),
-                modifier = Modifier.focusRequester(focus),
+                // 틀린 코드면 좌우로 흔들린다
+                modifier = Modifier.focusRequester(focus).shake(if (showError) error else null),
                 decorationBox = {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         repeat(CODE_LENGTH) { i ->
                             val ch = code.getOrNull(i)
                             val isCurrent = i == code.length && !joining
                             CodeBox(
+                                index = i,
                                 char = ch,
                                 active = isCurrent,
                                 filled = ch != null,
@@ -145,56 +183,75 @@ fun JoinCodeDialog(
             )
 
             Spacer(Modifier.height(22.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .clip(RoundedCornerShape(25.dp))
-                    .background(if (ready) Black else BoxIdle)
-                    .clickable(enabled = ready) { onJoin(code) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    if (joining) "확인 중…" else "참여하기",
-                    color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium,
-                )
-            }
+            MBButton(
+                text = if (joining) "확인 중…" else "참여하기",
+                onClick = { onJoin(code) },
+                enabled = ready || joining,
+                loading = joining,
+                style = MBButtonStyle.Brand,
+                height = 52.dp,
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 "취소",
                 fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
                 color = if (joining) BoxIdle else Sub,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(enabled = !joining, onClick = onDismiss)
+                    .bouncyClick(RoundedCornerShape(10.dp), enabled = !joining, scaleDown = 0.9f, onClick = onDismiss)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
     }
 }
 
-/** 코드 한 칸 */
+/** 코드 한 칸 — 글자가 들어오면 톡 커졌다 돌아오고, 지금 칸은 아쿠아로 빛나며 커서가 깜빡인다 */
 @Composable
-private fun CodeBox(char: Char?, active: Boolean, filled: Boolean, hasError: Boolean) {
-    val shape = RoundedCornerShape(12.dp)
-    val borderColor = when {
-        hasError -> ErrorRed
-        active || filled -> Black
-        else -> BoxIdle
-    }
+private fun CodeBox(index: Int, char: Char?, active: Boolean, filled: Boolean, hasError: Boolean) {
+    val shape = RoundedCornerShape(14.dp)
+    val borderColor by animateColorAsState(
+        when {
+            hasError -> ErrorRed
+            active -> Aqua500
+            filled -> Aqua300
+            else -> BoxIdle
+        },
+        label = "codeBorder",
+    )
+    val bg by animateColorAsState(
+        when {
+            hasError -> DangerSoft
+            active -> Color.White
+            filled -> Aqua100
+            else -> Field
+        },
+        label = "codeBg",
+    )
+    val borderWidth by animateDpAsState(if (active) 2.dp else 1.dp, label = "codeBorderW")
     Box(
         Modifier
-            .size(width = 38.dp, height = 50.dp)
+            .enterPop(index, delayStepMs = 45, startDelayMs = 150, from = 0.5f)
+            .size(width = 40.dp, height = 52.dp)
             .clip(shape)
-            .background(if (filled) Color(0xFFF7F7F7) else Color.White)
-            .border(if (active) 2.dp else 1.dp, borderColor, shape),
+            .background(bg)
+            .border(borderWidth, borderColor, shape),
         contentAlignment = Alignment.Center,
     ) {
         if (char != null) {
-            Text(char.toString(), fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Black)
+            // key 로 감싸서 글자가 바뀔 때마다 다시 톡 튀어나온다
+            androidx.compose.runtime.key(char) {
+                Text(
+                    char.toString(),
+                    fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+                    color = if (hasError) ErrorRed else Black,
+                    modifier = Modifier.enterPop(0, from = 0.4f),
+                )
+            }
         } else if (active) {
-            // 지금 칸 표시 (깜빡이지 않는 작은 밑줄)
-            Box(Modifier.size(width = 14.dp, height = 2.dp).background(Black))
+            // 지금 칸 표시 — 깜빡이는 커서
+            val t = rememberInfiniteTransition(label = "caret")
+            val a by t.animateFloat(1f, 0f, infiniteRepeatable(tween(520), RepeatMode.Reverse), label = "caretA")
+            Box(Modifier.size(width = 2.dp, height = 22.dp).alpha(a).background(Aqua700))
         }
     }
 }

@@ -38,6 +38,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.util.GeoPoint
@@ -77,7 +80,7 @@ private const val MIN_ZOOM = 7.0
 private const val MAX_ZOOM = 19.0
 
 /* 시흥 경계선 · 바깥 어둡게 */
-private val BORDER_COLOR = android.graphics.Color.rgb(0x1E, 0x88, 0xE5)  // 파랑 (체크인 선과 같은 색)
+private val BORDER_COLOR = android.graphics.Color.rgb(0x15, 0x80, 0x9E)  // 바다색 (체크인 선과 같은 색)
 private val OUTSIDE_DIM = android.graphics.Color.argb(0x55, 0x30, 0x30, 0x30) // 시흥 밖 반투명 회색
 
 private const val DEFAULT_ZOOM = 14.0
@@ -101,10 +104,18 @@ internal fun PlaceMap(
     prevLng: Double? = null,
     /** 이미 일정에 넣은 다른 장소들 — 파란 점 + 이름표로 보여준다 */
     spots: List<MapSpot> = emptyList(),
+    /** 시흥 추천 장소 (명소·맛집·카페) — 색 점. 크게 확대하면 이름도 보인다 */
+    places: List<PlacePin> = emptyList(),
+    /** 추천 장소 점을 눌렀을 때 (null 이면 눌러도 아무 일 없음) */
+    onPlaceClick: ((PlacePin) -> Unit)? = null,
+    /** 순서대로 잇는 선 (투어 루틴 미리보기). 2곳 이상이면 모두 보이게 지도를 맞춘다 */
+    route: List<Pair<Double, Double>> = emptyList(),
+    /** false 면 시흥 바깥을 어둡게 칠하지 않는다 */
+    dimOutside: Boolean = true,
 ) {
     // Android Studio 미리보기에서는 지도 대신 회색 상자
     if (LocalInspectionMode.current) {
-        Box(modifier.background(Color(0xFFE6EBE3)), contentAlignment = Alignment.Center) {
+        Box(modifier.background(Color(0xFFE4F8FC)), contentAlignment = Alignment.Center) {
             Text("지도", fontSize = 13.sp, color = TimelineColors.SubText)
         }
         return
@@ -114,7 +125,7 @@ internal fun PlaceMap(
     val key = vworldKey
     Log.d("MBTripMap", if (key.isBlank()) "VWORLD_KEY 없음 → 지도 안 띄움" else "지도: 브이월드 (키 ${key.take(6)}…)")
     if (key.isBlank()) {
-        Box(modifier.background(Color(0xFFE6EBE3)).padding(12.dp), contentAlignment = Alignment.Center) {
+        Box(modifier.background(Color(0xFFE4F8FC)).padding(12.dp), contentAlignment = Alignment.Center) {
             Text(
                 "지도 키(VWORLD_KEY)가 없어요.\nlocal.properties 또는 MapKey.kt 의 VWORLD_KEY_DIRECT 에 넣어주세요.",
                 fontSize = 12.sp, color = TimelineColors.SubText, textAlign = TextAlign.Center,
@@ -146,7 +157,7 @@ internal fun PlaceMap(
             controller.setCenter(GeoPoint(lat ?: SiheungArea.CENTER_LAT, lng ?: SiheungArea.CENTER_LNG))
             // 1) 시흥 밖 어둡게: 큰 네모(한반도 주변)에 시흥 모양 구멍을 뚫는다
             val border = SIHEUNG_BOUNDARY.map { (la, ln) -> GeoPoint(la, ln) }
-            overlays.add(
+            if (dimOutside) overlays.add(
                 Polygon(this).apply {
                     setPoints(
                         listOf(
@@ -281,7 +292,120 @@ internal fun PlaceMap(
         mapView.invalidate()
     }
 
+    // 시흥 추천 장소 점 — 확대(15 이상)하면 이름표까지
+    val placeClick by rememberUpdatedState(onPlaceClick)
+    val placeMarkers = remember { mutableListOf<Pair<Marker, PlacePin>>() }
+    var showNames by remember { mutableStateOf(mapView.zoomLevelDouble >= PLACE_LABEL_ZOOM) }
+    DisposableEffect(mapView) {
+        val listener = object : MapListener {
+            override fun onScroll(event: ScrollEvent?): Boolean = false
+            override fun onZoom(event: ZoomEvent?): Boolean {
+                val on = mapView.zoomLevelDouble >= PLACE_LABEL_ZOOM
+                if (on != showNames) showNames = on
+                return false
+            }
+        }
+        mapView.addMapListener(listener)
+        onDispose { mapView.removeMapListener(listener) }
+    }
+    LaunchedEffect(places, showNames) {
+        placeMarkers.forEach { mapView.overlays.remove(it.first) }
+        placeMarkers.clear()
+        // 추천 점은 일정 장소(이름표)보다 아래에 깐다
+        val below = mapView.overlays.indexOfFirst { it is MapEventsOverlay }.let { if (it < 0) mapView.overlays.size else it }
+        val firstSpot = mapView.overlays.indexOfFirst { o -> spotMarkers.any { it === o } }.let { if (it < 0) below else minOf(it, below) }
+        places.forEach { pin ->
+            val (icon, anchorX) = placeIcon(context, pin, showNames)
+            val m = Marker(mapView).apply {
+                position = GeoPoint(pin.lat, pin.lng)
+                this.icon = icon
+                setAnchor(anchorX, 0.5f)
+                setOnMarkerClickListener { _, _ ->
+                    placeClick?.invoke(pin)
+                    true
+                }
+            }
+            placeMarkers += m to pin
+            mapView.overlays.add(firstSpot, m)
+        }
+        mapView.invalidate()
+    }
+
+    // 루틴 선: 장소를 순서대로 잇고, 전부 보이게 맞춘다
+    val routeLine = remember {
+        Polyline(mapView).apply {
+            outlinePaint.color = android.graphics.Color.rgb(0x26, 0xA6, 0xC6)
+            outlinePaint.strokeWidth = 4f * density
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+            outlinePaint.strokeJoin = Paint.Join.ROUND
+            setOnClickListener { _, _, _ -> false }
+        }
+    }
+    LaunchedEffect(route) {
+        mapView.overlays.remove(routeLine)
+        if (route.size >= 2) {
+            val points = route.map { (la, ln) -> GeoPoint(la, ln) }
+            routeLine.setPoints(points)
+            // 선은 이름표 아래에
+            val firstMarker = mapView.overlays.indexOfFirst { it is Marker }.let { if (it < 0) mapView.overlays.size else it }
+            mapView.overlays.add(minOf(firstMarker, mapView.overlays.size), routeLine)
+            val box = org.osmdroid.util.BoundingBox.fromGeoPointsSafe(points).increaseByScale(1.5f)
+            // 지도 크기가 정해진 뒤에 맞춰야 해서 한 번 미룬다
+            mapView.post { runCatching { mapView.zoomToBoundingBox(box, false, (24 * density).toInt()) } }
+        } else if (route.size == 1) {
+            mapView.controller.setCenter(GeoPoint(route[0].first, route[0].second))
+        }
+        mapView.invalidate()
+    }
+
     AndroidView(factory = { mapView }, modifier = modifier)
+}
+
+/** 이 확대 단계부터 추천 장소 이름이 보인다 */
+private const val PLACE_LABEL_ZOOM = 15.0
+
+/** 지도에 찍을 시흥 추천 장소 하나. color = 점 색 (안드로이드 색 값) */
+internal data class PlacePin(val id: String, val lat: Double, val lng: Double, val name: String, val color: Int)
+
+/** ● (확대하면 ● 이름) 모양. 반환: (그림, 점 위치의 가로 비율) */
+private fun placeIcon(context: Context, pin: PlacePin, withName: Boolean): Pair<BitmapDrawable, Float> {
+    val d = context.resources.displayMetrics.density
+    val dotR = 5.5f * d
+    val ring = 2f * d
+    if (!withName) {
+        val size = ((dotR + ring) * 2 + 2 * d).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val cx = size / 2f
+        c.drawCircle(cx, cx, dotR + ring, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+        c.drawCircle(cx, cx, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = pin.color })
+        return BitmapDrawable(context.resources, bmp) to 0.5f
+    }
+    val text = if (pin.name.length > 12) pin.name.take(12) + "…" else pin.name
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 10 * d
+        color = android.graphics.Color.rgb(0x0F, 0x2A, 0x3A)
+        typeface = runCatching { context.resources.getFont(com.example.mbtrip.R.font.pretendard_bold) }.getOrDefault(Typeface.DEFAULT_BOLD)
+    }
+    val h = 20 * d
+    val padH = 6 * d
+    val pillLeft = (dotR + ring) * 2 + 3 * d
+    val w = (pillLeft + padH * 2 + textPaint.measureText(text) + 2 * d).toInt()
+    val bmp = Bitmap.createBitmap(w, h.toInt(), Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val pill = RectF(pillLeft, 1 * d, w - 1 * d, h - 1 * d)
+    c.drawRoundRect(pill, h / 2, h / 2, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.argb(0xE6, 0xFF, 0xFF, 0xFF) })
+    c.drawRoundRect(pill, h / 2, h / 2, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1 * d
+        color = pin.color
+    })
+    val cx = dotR + ring + 1 * d
+    c.drawCircle(cx, h / 2, dotR + ring, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+    c.drawCircle(cx, h / 2, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = pin.color })
+    val baseline = h / 2 - (textPaint.ascent() + textPaint.descent()) / 2
+    c.drawText(text, pillLeft + padH, baseline, textPaint)
+    return BitmapDrawable(context.resources, bmp) to (cx / w)
 }
 
 /** 지도에 띄울 '이미 추가한 장소' 하나 */
@@ -295,8 +419,8 @@ private fun spotIcon(context: Context, label: String): Pair<BitmapDrawable, Floa
     val text = if (label.length > 14) label.take(14) + "…" else label
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 11 * d
-        color = android.graphics.Color.rgb(0x22, 0x22, 0x22)
-        typeface = Typeface.DEFAULT_BOLD
+        color = android.graphics.Color.rgb(0x0F, 0x2A, 0x3A)
+        typeface = runCatching { context.resources.getFont(com.example.mbtrip.R.font.pretendard_bold) }.getOrDefault(Typeface.DEFAULT_BOLD)
     }
     val dotR = 6 * d
     val gap = 4 * d
@@ -314,11 +438,11 @@ private fun spotIcon(context: Context, label: String): Pair<BitmapDrawable, Floa
     c.drawRoundRect(pill, h / 2, h / 2, Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 1 * d
-        color = android.graphics.Color.rgb(0x5D, 0xAD, 0xE2)
+        color = android.graphics.Color.rgb(0x26, 0xA6, 0xC6)
     })
     // 점
     val cx = dotR + 1 * d
-    c.drawCircle(cx, h / 2, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.rgb(0x5D, 0xAD, 0xE2) })
+    c.drawCircle(cx, h / 2, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.rgb(0x26, 0xA6, 0xC6) })
     c.drawCircle(cx, h / 2, dotR, Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 2 * d

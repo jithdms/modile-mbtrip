@@ -1,5 +1,12 @@
 package com.example.mbtrip.timeline.ui
 
+import kotlinx.coroutines.tasks.await
+
+import com.example.mbtrip.timeline.data.TripLive
+import com.example.mbtrip.siheung.PendingRoutine
+import com.example.mbtrip.siheung.PlaceLocator
+
+import androidx.compose.ui.graphics.SolidColor
 import com.example.mbtrip.diagnosis.GroupRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
@@ -30,6 +37,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +84,32 @@ import com.example.mbtrip.timeline.vote.VoteActions
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterFromBelow
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Warning
 
 private data class EditorState(val block: Block, val isNew: Boolean)
 
@@ -104,6 +138,10 @@ fun TimelineScreen(
     onHomeClick: (() -> Unit)? = null,
     /** 오른쪽 위 🔔 → 알림 모아보기. null 이면 버튼 숨김 */
     onNotificationsClick: (() -> Unit)? = null,
+    /** 여행이 끝났을 때 아래 [후기 쓰러 가기] → 후기 쓰기 화면. null 이면 버튼 숨김 */
+    onWriteReview: (() -> Unit)? = null,
+    /** [테스트용 가짜 일정 넣기] 버튼을 보일지 (테스트 계정만) */
+    canSeedTestData: Boolean = false,
 ) {
     val unreadNotifications by remember { NotificationDependencies.repository.unreadCount() }
         .collectAsState(initial = 0)
@@ -111,10 +149,23 @@ fun TimelineScreen(
         .collectAsState(initial = emptyList())
     val screenScope = rememberCoroutineScope()
 
-    // trips/{tripId} 문서 (목적지·기간) 를 데이터 구조 문서대로 저장
-    LaunchedEffect(tripId, tripStart, tripEnd) {
-        runCatching { TimelineDependencies.tripRepository.saveTrip(tripId, TripSession.destination, tripStart, tripEnd) }
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+
+    // trips/{tripId} 문서가 아직 없을 때만 만든다 (친구가 바꾼 기간을 덮어쓰지 않게)
+    LaunchedEffect(tripId) {
+        runCatching { TripLive.ensureTrip(tripId, TripSession.destination, tripStart, tripEnd) }
     }
+    // 여행 기간은 실시간으로 — 다른 사람이 숙소 날짜로 기간을 넓히면 이 폰의 날짜 탭도 바로 늘어난다
+    val live by remember(tripId) { TripLive.observeTrip(tripId) }.collectAsState(initial = null)
+    val start = live?.start ?: tripStart
+    val end = (live?.end ?: tripEnd).let { if (it.isBefore(start)) start else it }
+
+    // 지금 같이 보고 있는 사람 (나 포함)
+    val viewers by remember(tripId) { TripLive.observeViewers(tripId) }.collectAsState(initial = emptyList())
+    LaunchedEffect(tripId) {
+        TripLive.stayPresent(tripId, com.example.mbtrip.session.Account.profile?.nickname ?: "친구")
+    }
+
     val vm: TimelineViewModel = viewModel(
         key = "timeline-$tripId",
         factory = TimelineViewModel.factory(repository, tripId),
@@ -123,12 +174,22 @@ fun TimelineScreen(
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
+    // 방 만들기에서 고른 추천 투어 루틴 → 처음 열 때 이 순서대로 블록을 넣는다
+    val loaded = blocks != null
+    LaunchedEffect(vm, loaded) {
+        if (!loaded) return@LaunchedEffect
+        PendingRoutine.take(tripId)?.let { routine ->
+            vm.applyRoutine(routine, start, end) { p -> PlaceLocator.locate(appContext, p) }
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
     TimelineContent(
         blocks = blocks,
         tripId = tripId,
         members = members,
-        tripStart = tripStart,
-        tripEnd = tripEnd,
+        tripStart = start,
+        tripEnd = end,
         markers = markers,
         now = now,
         snackbar = snackbar,
@@ -137,11 +198,13 @@ fun TimelineScreen(
         onUpdate = vm::update,
         onDelete = vm::delete,
         onMove = vm::move,
-        onSeed = {
-            vm.seedFakeData(tripStart, tripEnd)
-            // 가짜 일정과 함께 가짜 동행자 3명도 members 에 넣는다
-            screenScope.launch { runCatching { memberRepository.invite(tripId, FakeBlocks.members) } }
-        },
+        // 테스트 계정만: 가짜 일정과 함께 가짜 동행자 3명도 members 에 넣는다
+        onSeed = if (canSeedTestData) {
+            {
+                vm.seedFakeData(tripStart, tripEnd)
+                screenScope.launch { runCatching { memberRepository.invite(tripId, FakeBlocks.members) } }
+            }
+        } else null,
         onToggleTodo = vm::toggleTodo,
         onRequestDelete = vm::markDeleteRequested,
         onProposeEdit = vm::proposeEdit,
@@ -163,7 +226,113 @@ fun TimelineScreen(
             }
         },
     )
+        // 왼쪽 아래: (위) 함께 보는 사람 · (아래) 여행이 끝났으면 후기 쓰기
+        val others = viewers.filter { it.uid != com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
+        // 오는 날이 지났고 내가 아직 후기를 안 썼으면 버튼을 보인다
+        val ended = end.isBefore(java.time.LocalDate.now())
+        val reviewWritten by androidx.compose.runtime.produceState<Boolean?>(null, tripId, ended) {
+            value = if (!ended) true else runCatching {
+                val me = com.example.mbtrip.timeline.data.ensureSignedIn()
+                me != null && com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("trips").document(tripId).collection("reviews").document(me)
+                    .get().await().exists()
+            }.getOrDefault(false)
+        }
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 88.dp, bottom = 20.dp), // 오른쪽은 + 버튼 자리
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = others.isNotEmpty(),
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it },
+                exit = androidx.compose.animation.fadeOut(),
+            ) {
+                LiveViewersPill(others.map { it.nickname })
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = onWriteReview != null && ended && reviewWritten == false &&
+                    tripId !in com.example.mbtrip.triplog.ReviewReminders.savedTrips, // 방금 썼으면 숨김
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it },
+                exit = androidx.compose.animation.fadeOut(),
+            ) {
+                WriteReviewPill { onWriteReview?.invoke() }
+            }
+        }
 
+        // 방장이 이 방을 지웠으면 → 안내 + 메인으로 (내 여행 목록에서도 뺀다)
+        if (live?.deleted == true) {
+            LaunchedEffect(tripId) { com.example.mbtrip.session.MyTrips.forget(tripId) }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.97f))
+                    .clickable(enabled = true, onClick = {}), // 뒤 일정표를 못 누르게
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+                    com.example.mbtrip.ui.design.MBIcon(com.example.mbtrip.R.drawable.ic_mb_delete, size = 36.dp, tint = TimelineColors.SubText)
+                    Spacer(Modifier.height(12.dp))
+                    Text("삭제된 방이에요", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Ink)
+                    Spacer(Modifier.height(4.dp))
+                    Text("방을 만든 사람이 이 여행 방을 삭제했어요.", fontSize = 13.sp, color = TimelineColors.SubText)
+                    Spacer(Modifier.height(20.dp))
+                    com.example.mbtrip.ui.design.MBButton(
+                        text = "메인으로",
+                        onClick = { onHomeClick?.invoke() },
+                        style = com.example.mbtrip.ui.design.MBButtonStyle.Deep,
+                        height = 48.dp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 여행이 끝났어요 · 후기 쓰러 가기 → */
+@Composable
+private fun WriteReviewPill(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        Modifier
+            .clip(shape)
+            .background(Ink)
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 12.dp, top = 11.dp, bottom = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        com.example.mbtrip.ui.design.MBIcon(com.example.mbtrip.R.drawable.ic_mb_edit, size = 16.dp, tint = Color.White)
+        Spacer(Modifier.width(8.dp))
+        Text("여행이 끝났어요 · 후기 쓰러 가기", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        Spacer(Modifier.width(4.dp))
+        com.example.mbtrip.ui.design.MBIcon(com.example.mbtrip.R.drawable.ic_mb_chevron_right, size = 16.dp, tint = Color.White)
+    }
+}
+
+/** ● 민지 님이 함께 보는 중 */
+@Composable
+private fun LiveViewersPill(names: List<String>) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        Modifier
+            .clip(shape)
+            .background(Color.White)
+            .border(1.dp, Line, shape)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(Color(0xFF2FB36B), CircleShape))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            when (names.size) {
+                1 -> "${names[0]} 님이 함께 보는 중"
+                else -> "${names[0]} 님 외 ${names.size - 1}명이 함께 보는 중"
+            },
+            fontSize = 12.sp, color = Ink, fontWeight = FontWeight.Medium,
+        )
+    }
 }
 
 /**
@@ -185,7 +354,8 @@ internal fun TimelineContent(
     onUpdate: (original: Block, edited: Block) -> EditResult,
     onDelete: (blockId: String) -> EditResult,
     onMove: (blockId: String, requestedStartMinutes: Int, window: IntRange) -> EditResult,
-    onSeed: () -> Unit,
+    /** null 이면 [테스트용 가짜 일정 넣기] 버튼을 숨긴다 (테스트 계정이 아님) */
+    onSeed: (() -> Unit)?,
     onInviteClick: () -> Unit,
     onToggleTodo: (blockId: String, lineIndex: Int) -> Unit = { _, _ -> },
     onRequestDelete: (blockId: String) -> EditResult = { EditResult.Error("삭제 제안을 할 수 없어요.") },
@@ -233,14 +403,24 @@ internal fun TimelineContent(
 
     Box(Modifier.fillMaxSize().background(Color.White)) {
         Column(Modifier.fillMaxSize()) {
-            MemberBar(
-                members, onInviteClick, onHomeClick, onRemoveMember, tripId, memberRepository, onInvited, avatarSize,
-                onNotificationsClick, unreadNotifications,
-            )
-            HorizontalDivider()
-            DayTabs(dates, selectedIndex) { selectedIndex = it }
+            // 위쪽(동행자 · 날짜 탭)은 은은한 하늘 배경
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White),
+            ) {
+                Box(Modifier.enterFromBelow(0, distance = 10.dp)) {
+                    MemberBar(
+                        members, onInviteClick, onHomeClick, onRemoveMember, tripId, memberRepository, onInvited, avatarSize,
+                        onNotificationsClick, unreadNotifications,
+                    )
+                }
+                Box(Modifier.enterFromBelow(1, distance = 10.dp)) {
+                    DayTabs(dates, selectedIndex) { selectedIndex = it }
+                }
+            }
             // 일차 탭 ↔ 비율 구분선
-            HorizontalDivider(color = Color(0xFFE0E0E0))
+            HorizontalDivider(color = Line)
 
             val dayBlocks = list.filter { it.date == selectedDate }.sortedBy { it.start }
             KindRatioBar(dayBlocks, list, GroupRatio.of(members.map { it.jpScore }))
@@ -270,25 +450,47 @@ internal fun TimelineContent(
 
         // 불러오는 중 / 여행 전체가 비어 있을 때 (Firestore 처음 연결 시 테스트용 버튼)
         if (blocks == null) {
-            Text(
-                "일정을 불러오는 중…", fontSize = 13.sp, color = TimelineColors.SubText,
-                modifier = Modifier.align(Alignment.Center),
-            )
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(Modifier.size(28.dp), color = Aqua500, strokeWidth = 3.dp)
+                Spacer(Modifier.height(10.dp))
+                Text("일정을 불러오는 중…", fontSize = 13.sp, color = TimelineColors.SubText)
+            }
         } else if (blocks.isEmpty()) {
-            TextButton(onClick = onSeed, modifier = Modifier.align(Alignment.Center)) {
-                Text("테스트용 가짜 일정 넣기")
+            Column(
+                Modifier.align(Alignment.Center).enterPop(0, from = 0.8f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                com.example.mbtrip.ui.design.MBIcon(com.example.mbtrip.R.drawable.ic_mb_calendar, size = 36.dp, tint = TimelineColors.SubText)
+                Spacer(Modifier.height(6.dp))
+                if (onSeed != null) {
+                    TextButton(onClick = onSeed) {
+                        Text("테스트용 가짜 일정 넣기", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Text("아직 일정이 없어요", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                    Spacer(Modifier.height(2.dp))
+                    Text("오른쪽 아래 + 버튼으로 첫 블록을 추가해 보세요.", fontSize = 13.sp, color = TimelineColors.SubText)
+                }
             }
         }
 
-        FloatingActionButton(
+        AddFab(
+            open = choosingKind,
             onClick = { choosingKind = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            containerColor = Color(0xFF1E1E1E),
-            contentColor = Color.White,
-            shape = CircleShape,
-        ) { Text("+", fontSize = 28.sp) }
+        )
 
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp))
+        // 알림 줄 — 남색 알약, 아래에서 떠오른다
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 92.dp)) { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = Ink,
+                contentColor = Color.White,
+                actionColor = Aqua300,
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.padding(horizontal = 16.dp).enterPop(0, from = 0.85f),
+            )
+        }
     }
 
     if (choosingKind) {
@@ -431,30 +633,65 @@ private fun MemberBar(
 
 @Composable
 private fun DayTabs(dates: List<LocalDate>, selected: Int, onSelect: (Int) -> Unit) {
+    val sel = selected.coerceIn(0, dates.lastIndex)
     ScrollableTabRow(
-        selectedTabIndex = selected.coerceIn(0, dates.lastIndex),
+        selectedTabIndex = sel,
         edgePadding = 12.dp,
-        containerColor = Color.White,
-        contentColor = Color.Black,
+        containerColor = Color.Transparent,
+        contentColor = Ink,
+        divider = {},
+        // 고른 날짜 아래 남색 막대가 미끄러져 따라간다
+        indicator = { positions ->
+            if (sel < positions.size) {
+                Box(
+                    Modifier
+                        .tabIndicatorOffset(positions[sel])
+                        .padding(horizontal = 20.dp)
+                        .height(2.dp)
+                        .background(Ink),
+                )
+            }
+        },
     ) {
         dates.forEachIndexed { i, date ->
             val isSel = i == selected
+            val color by animateColorAsState(if (isSel) Ink else TimelineColors.SubText, label = "tabColor")
             Tab(
                 selected = isSel,
                 onClick = { onSelect(i) },
                 text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
                         Text(
                             "${i + 1}일차",
                             fontSize = 15.sp,
-                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSel) Color.Black else TimelineColors.SubText,
+                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                            color = color,
                         )
-                        Text(date.format(MD), fontSize = 11.sp, color = TimelineColors.SubText)
+                        Text(date.format(MD), fontSize = 11.sp, color = if (isSel) Aqua700 else TimelineColors.SubText)
                     }
                 },
             )
         }
+    }
+}
+
+/** 오른쪽 아래 + 버튼 — 남색 동그라미, 열리면 × 로 돈다 */
+@Composable
+private fun AddFab(open: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val turn by animateFloatAsState(if (open) 45f else 0f, tween(220), label = "fabTurn")
+    Box(
+        modifier
+            .size(56.dp)
+            .bouncyClick(CircleShape, onClick = onClick)
+            .background(Ink, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        com.example.mbtrip.ui.design.MBIcon(
+            com.example.mbtrip.R.drawable.ic_mb_add, size = 26.dp, tint = Color.White,
+            contentDescription = "블록 추가", modifier = Modifier.rotate(turn),
+        )
     }
 }
 
@@ -464,14 +701,16 @@ private fun DayTabs(dates: List<LocalDate>, selected: Int, onSelect: (Int) -> Un
 private fun KindChooserDialog(onDismiss: () -> Unit, onChoose: (BlockKind) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("어떤 블록을 추가할까요?", fontSize = 18.sp) },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(20.dp),
+        title = { Text("어떤 블록을 추가할까요?", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink) },
         text = {
-            // 가로로 꽉 찬 버튼을 위아래로
+            // 가로로 꽉 찬 버튼을 위아래로 (차례로 떠오른다)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                KindOption("확정 블록", "시간·장소·할 일을 정해요 · '제안됨'으로 시작", TimelineColors.Fixed, Modifier.fillMaxWidth()) {
+                KindOption(com.example.mbtrip.R.drawable.ic_mb_pin, "확정 블록", "시간·장소·할 일을 정해요 · '제안됨'으로 시작", TimelineColors.Fixed, Modifier.fillMaxWidth().enterFromBelow(0)) {
                     onChoose(BlockKind.FIXED)
                 }
-                KindOption("자유 블록", "메모만 남겨요 · 비워두면 빈칸", TimelineColors.Free, Modifier.fillMaxWidth()) {
+                KindOption(com.example.mbtrip.R.drawable.ic_mb_cafe, "자유 블록", "메모만 남겨요 · 비워두면 빈칸", TimelineColors.Free, Modifier.fillMaxWidth().enterFromBelow(1)) {
                     onChoose(BlockKind.FREE)
                 }
             }
@@ -482,19 +721,25 @@ private fun KindChooserDialog(onDismiss: () -> Unit, onChoose: (BlockKind) -> Un
 }
 
 @Composable
-private fun KindOption(title: String, desc: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(12.dp)
-    Column(
+private fun KindOption(icon: Int, title: String, desc: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
         modifier
-            .clip(shape)
-            .background(color)
-            .border(1.dp, TimelineColors.Border, shape)
-            .clickable(onClick = onClick)
+            .bouncyClick(shape, scaleDown = 0.96f, elevation = 4.dp, shadowColor = Aqua500, onClick = onClick)
+            .background(lerp(color, Color.White, 0.55f), shape)
+            .border(1.dp, lerp(color, Color.Black, 0.12f), shape)
             .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
-        Text(desc, fontSize = 12.sp, color = Color(0xFF424242))
+        Box(Modifier.size(40.dp).background(Color.White, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+            com.example.mbtrip.ui.design.MBIcon(icon, size = 20.dp, tint = Ink)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Ink)
+            Text(desc, fontSize = 12.sp, color = InkSoft)
+        }
+        com.example.mbtrip.ui.design.MBIcon(com.example.mbtrip.R.drawable.ic_mb_arrow_right, size = 18.dp, tint = Ink.copy(alpha = 0.5f))
     }
 }
 
@@ -556,7 +801,7 @@ private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recomme
     Column(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFFFAFAFA))
+            .background(Aqua50)
             .animateContentSize()
             .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 2.dp),
     ) {
@@ -591,6 +836,7 @@ private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recomme
                                 Modifier
                                     .fillMaxWidth(animated.coerceIn(0f, 1f))
                                     .fillMaxHeight()
+                                    .clip(RoundedCornerShape(50))
                                     .background(TimelineColors.FixedDash),
                             )
                         }
@@ -605,7 +851,7 @@ private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recomme
                                     .width(2.dp)
                                     .fillMaxHeight()
                                     .clip(RoundedCornerShape(1.dp))
-                                    .background(Color(0xFF1E1E1E)),
+                                    .background(Ink),
                             )
                         }
                     }
@@ -620,7 +866,7 @@ private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recomme
                             else -> "· 딱 좋아요"
                         },
                         fontSize = 11.sp,
-                        color = if (kotlin.math.abs(diff) >= 10) Color(0xFFE65100) else TimelineColors.SubText,
+                        color = if (kotlin.math.abs(diff) >= 10) Warning else TimelineColors.SubText,
                     )
                 }
             }
@@ -652,7 +898,7 @@ private fun KindRatioBar(dayBlocks: List<Block>, allBlocks: List<Block>, recomme
         }
     }
     // 아래 일정표와 확실히 구분
-    HorizontalDivider(color = Color(0xFFE0E0E0))
+    HorizontalDivider(color = Line)
 }
 
 @Composable
@@ -660,7 +906,7 @@ private fun RatioLegend(color: Color, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(10.dp).clip(CircleShape).background(color).border(1.dp, TimelineColors.Border, CircleShape))
         Spacer(Modifier.width(4.dp))
-        Text(text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink)
     }
 }
 

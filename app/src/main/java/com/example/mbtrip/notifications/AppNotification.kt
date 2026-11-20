@@ -16,11 +16,12 @@ enum class NotificationType(val group: NotificationGroup) {
     SCHEDULE_CHANGE(NotificationGroup.SCHEDULE), // 시간·장소 변경
     INVITE(NotificationGroup.COMPANION),         // 여행에 초대됨 / 누가 들어옴
     APP_UPDATE(NotificationGroup.APP),           // 앱 업데이트·공지
+    REVIEW_REQUEST(NotificationGroup.REVIEW),    // "○○ 여행은 어떠셨나요?" — 여행이 끝나면 후기 쓰기로
 }
 
 /** 알림 화면 위쪽 필터 칸 */
 enum class NotificationGroup(val label: String) {
-    VOTE("투표"), SCHEDULE("일정"), COMPANION("동행"), APP("앱 소식"),
+    VOTE("투표"), SCHEDULE("일정"), COMPANION("동행"), REVIEW("후기"), APP("앱 소식"),
 }
 
 /**
@@ -72,11 +73,26 @@ class FakeNotificationRepository(initial: List<AppNotification> = SampleNotifica
         items.value = (listOf(notification) + items.value.filterNot { it.id == notification.id })
             .sortedByDescending { it.createdAt }
     }
+
+    /** 목록 통째로 바꾸기 (테스트 계정 ↔ 일반 계정) */
+    fun replaceAll(list: List<AppNotification>) {
+        items.value = list.sortedByDescending { it.createdAt }
+    }
 }
 
 /** 화면 어디서나 같은 알림 목록을 쓰도록 한 곳에서 고른다 */
 object NotificationDependencies {
-    var repository: NotificationRepository = FakeNotificationRepository()
+    // 처음엔 빈 알림함 — 테스트 계정으로 로그인하면 예시 알림이 채워진다
+    var repository: NotificationRepository = FakeNotificationRepository(initial = emptyList())
+
+    private var testDataShown: Boolean? = null
+
+    /** 테스트 계정이면 예시 알림, 아니면 빈 알림함 (화면은 같은 저장소를 계속 쓰므로 바로 바뀐다) */
+    fun useTestData(tester: Boolean) {
+        if (testDataShown == tester) return
+        testDataShown = tester
+        (repository as? FakeNotificationRepository)?.replaceAll(if (tester) SampleNotifications.make() else emptyList())
+    }
 }
 
 /** 가짜 알림 (거북섬 1박 시나리오, 지금 시각 기준으로 몇 분·몇 시간 전) */

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 진단 화면 맨 위 아이콘 바탕 (연한 아쿠아 둥근 사각형) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/mb_aqua_100" />
+    <corners android:radius="14dp" />
+</shape>

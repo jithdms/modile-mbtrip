@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 메인 버튼 글자색: 켜짐 남색 / 꺼짐 회색 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/mb_faint" android:state_enabled="false" />
+    <item android:color="@color/mb_ink" />
+</selector>

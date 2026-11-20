@@ -1,5 +1,18 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Mint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,8 +47,8 @@ import com.example.mbtrip.timeline.model.Block
 import com.example.mbtrip.timeline.vote.VoteChoice
 import com.example.mbtrip.timeline.vote.canSubmitVote
 
-private val AgreeColor = Color(0xFFA9E5A0)     // 와이어프레임 초록
-private val DisagreeColor = Color(0xFFE88080)  // 와이어프레임 빨강
+private val AgreeColor = Mint     // 와이어프레임 초록
+private val DisagreeColor = Coral  // 와이어프레임 빨강
 
 /**
  * 투표 모달 (와이어프레임 '투표하기'): [찬성 | 반대] + 의견 + "의견 보내기".
@@ -57,13 +70,14 @@ internal fun VoteDialog(
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .enterPop(0, from = 0.88f)
+                .clip(RoundedCornerShape(20.dp))
                 .background(Color.White)
-                .padding(20.dp),
+                .padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                "투표하기", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                "투표하기", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
             Text(
@@ -92,19 +106,21 @@ internal fun VoteDialog(
                         fontSize = 14.sp,
                     )
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = com.example.mbtrip.ui.design.mbFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             if (choice == VoteChoice.DISAGREE && comment.isBlank()) {
                 Text("반대할 때는 이유가 필요해요.", fontSize = 12.sp, color = TimelineColors.Error)
             }
 
-            Button(
+            com.example.mbtrip.ui.design.MBButton(
+                text = if (sending) "보내는 중…" else "의견 보내기",
                 onClick = { choice?.let { onSubmit(it, comment.trim()) } },
-                enabled = canSubmitVote(choice, comment) && !sending,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1E), contentColor = Color.White),
-            ) { Text(if (sending) "보내는 중…" else "의견 보내기") }
+                enabled = canSubmitVote(choice, comment) || sending,
+                loading = sending,
+                height = 50.dp,
+            )
         }
     }
 }
@@ -113,18 +129,18 @@ internal fun VoteDialog(
 private fun VoteButton(
     text: String, selected: Boolean, color: Color, enabled: Boolean, modifier: Modifier, onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(16.dp)
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) color else lerp(color, Color.White, 0.6f), label = "voteBg")
     Box(
         modifier
-            .height(52.dp)
-            .clip(shape)
-            .background(if (selected) color else lerp(color, Color.White, 0.6f))
+            .height(56.dp)
+            .bouncyClick(shape, enabled = enabled, scaleDown = 0.93f, elevation = if (selected) 6.dp else 0.dp, shadowColor = color, onClick = onClick)
+            .background(bg)
             .border(
                 if (selected) 2.dp else 1.dp,
-                if (selected) Color.Black.copy(alpha = 0.6f) else TimelineColors.Border,
+                if (selected) Ink.copy(alpha = 0.6f) else TimelineColors.Border,
                 shape,
-            )
-            .clickable(enabled = enabled, onClick = onClick),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, fontSize = 15.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)

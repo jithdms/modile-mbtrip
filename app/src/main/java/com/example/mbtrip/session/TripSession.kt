@@ -38,7 +38,10 @@ object TripSession {
     var inviteCode: String? by mutableStateOf(null); private set
 
     /** 화면에서 쓸 여행 ID (만든 여행이 없으면 가짜 여행) */
-    val currentTripId: String get() = tripId ?: FakeBlocks.TRIP_ID
+    // 아직 여행이 없을 때: 테스트 계정은 예시 여행, 다른 계정은 나만의 빈 여행 (예시 자료가 섞이지 않게)
+    val currentTripId: String
+        get() = tripId ?: if (TestAccess.isTester) FakeBlocks.TRIP_ID
+        else "draft_${com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "guest"}"
 
     /**
      * ① 방 만들기 [생성하기]. 날짜 글자는 "2026.10.01 ~ 2026.10.03" 같은 모양을 읽는다.
@@ -54,6 +57,7 @@ object TripSession {
         endDate = range.second
         headcount = Regex("\\d+").find(headcountText)?.value?.toIntOrNull()
         inviteCode = newInviteCode()
+        rememberCurrent(createdByMe = true) // 내 여행 목록에 추가
         return null
     }
 
@@ -69,6 +73,7 @@ object TripSession {
             code = newInviteCode()
         }
         inviteCode = code
+        rememberCurrent(createdByMe = true) // 바뀐 초대코드 반영
         TimelineDependencies.tripRepository.saveTrip(
             tripId = id,
             destination = destination,
@@ -82,7 +87,7 @@ object TripSession {
         )
         val auth = FirebaseAuth.getInstance()
         val uid = auth.currentUser?.uid ?: auth.signInAnonymously().await().user?.uid ?: return
-        TimelineDependencies.memberRepository.invite(id, listOf(Member(uid, "나", "@me", jpScore = myJpScore ?: 50)))
+        TimelineDependencies.memberRepository.invite(id, listOf(me(uid, myJpScore)))
     }
 
     /**
@@ -97,6 +102,7 @@ object TripSession {
         }
         val start = startDate ?: LocalDate.now()
         val end = endDate ?: start
+        MyTrips.trips.firstOrNull { it.tripId == id }?.let { rememberCurrent(it.createdByMe) } // 넓어진 기간 반영
         TimelineDependencies.tripRepository.saveTrip(
             tripId = id,
             destination = destination,
@@ -130,11 +136,12 @@ object TripSession {
         endDate = doc.getString("endDate")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         headcount = doc.getLong("headcount")?.toInt()
         inviteCode = c
+        rememberCurrent(createdByMe = false) // 내 여행 목록에 추가
 
         val auth = FirebaseAuth.getInstance()
         val uid = auth.currentUser?.uid ?: auth.signInAnonymously().await().user?.uid
             ?: return "로그인 정보를 가져오지 못했어요."
-        TimelineDependencies.memberRepository.invite(doc.id, listOf(Member(uid, "나", "@me", jpScore = myJpScore ?: 50)))
+        TimelineDependencies.memberRepository.invite(doc.id, listOf(me(uid, myJpScore)))
         return null
     }
 
@@ -143,6 +150,47 @@ object TripSession {
             .whereEqualTo("inviteCode", code).limit(1).get().await()
             .documents.firstOrNull()?.id
     }.getOrNull()
+
+    /** 내 여행 목록에서 고른 여행을 '지금 여행'으로 연다 */
+    fun open(trip: MyTrip) {
+        tripId = trip.tripId
+        departure = trip.departure
+        destination = trip.destination
+        startDate = trip.startDate
+        endDate = trip.endDate
+        headcount = trip.headcount
+        inviteCode = trip.inviteCode
+        // 최근에 연 여행이 위로 (테스트 계정의 체험용 여행은 목록에 따로 보여서 기억하지 않는다)
+        if (!TestAccess.isDemoTrip(trip.tripId)) MyTrips.remember(trip.copy(touchedAt = System.currentTimeMillis()))
+    }
+
+    /** 동행자 목록에 넣을 나 — 로그인했으면 내 프로필 이름·아이디 */
+    private fun me(uid: String, myJpScore: Int?): Member {
+        val p = Account.profile
+        return Member(
+            uid,
+            p?.nickname ?: "나",
+            p?.handle ?: "@me",
+            jpScore = myJpScore ?: p?.jpScore ?: 50,
+            bio = p?.bio?.ifBlank { null },
+        )
+    }
+
+    private fun rememberCurrent(createdByMe: Boolean) {
+        val id = tripId ?: return
+        MyTrips.remember(
+            MyTrip(
+                tripId = id,
+                destination = destination,
+                departure = departure,
+                startDate = startDate,
+                endDate = endDate,
+                headcount = headcount,
+                inviteCode = inviteCode,
+                createdByMe = createdByMe,
+            ),
+        )
+    }
 
     /** 집 버튼 → 처음부터 다시 */
     fun clear() {

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 기본 프로필 사진: 연한 하늘 바탕 + 사람 모양 (사진을 안 올린 사람) — 쓰는 곳에서 동그랗게 자른다 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- 바탕 -->
+    <path android:fillColor="#FFE6F8FC" android:pathData="M0,0h96v96h-96z" />
+    <!-- 어깨 -->
+    <path android:fillColor="#FF8ED6E8"
+        android:pathData="M14,96C14,76 29,63 48,63C67,63 82,76 82,96Z" />
+    <!-- 머리 -->
+    <path android:fillColor="#FF8ED6E8"
+        android:pathData="M48,38m-17,0a17,17 0,1 1,34 0a17,17 0,1 1,-34 0" />
+</vector>

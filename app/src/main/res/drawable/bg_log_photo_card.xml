@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 사진 칸 모서리 (clipToOutline) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/log_placeholder" />
+    <corners android:radius="22dp" />
+</shape>

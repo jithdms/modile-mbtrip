@@ -11,6 +11,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -76,10 +78,10 @@ class FakeMemberRepository(
 object FakeUsers {
     val all: List<Member> = FakeBlocks.members + listOf(
         Member("u_haneul", "하늘", "@haneul_trip", jpScore = 30, bio = "카페 투어 전문"),
-        Member("u_doyun", "도윤", "@doyun", jpScore = 65, bio = "서핑 배우는 중 🏄"),
+        Member("u_doyun", "도윤", "@doyun", jpScore = 65, bio = "서핑 배우는 중"),
         Member("u_yerin", "예린", "@yerin_j", jpScore = 10, bio = "10분 단위로 일정 짜요"),
         Member("u_jiho", "지호", "@jiho_p", jpScore = 85),
-        Member("u_suah", "수아", "@sua_a", jpScore = 40, bio = "사진 찍어주는 담당 📸"),
+        Member("u_suah", "수아", "@sua_a", jpScore = 40, bio = "사진 찍어주는 담당"),
         Member("u_minjun", "민준", "@minjun22", jpScore = 52),
         Member("u_chaeeun", "채은", "@chaeeun", jpScore = 23),
     )
@@ -102,26 +104,32 @@ class FirestoreMemberRepository(
 
     private fun membersOf(tripId: String) = db.collection("trips").document(tripId).collection("members")
 
-    override fun observeMembers(tripId: String): Flow<List<Member>> = callbackFlow {
-        // joinedAt 이 없는 문서(진단 화면이 먼저 만든 Member)도 보이게 정렬은 앱에서 한다
-        val reg = membersOf(tripId).addSnapshotListener { snap, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
-            trySend(
-                snap?.documents.orEmpty()
-                    .sortedBy { it.getTimestamp("joinedAt")?.seconds ?: 0L }
-                    .mapNotNull { it.toMember() },
-            )
-        }
-        awaitClose { reg.remove() }
-    }
+    override fun observeMembers(tripId: String): Flow<List<Member>> = flow {
+        ensureSignedIn()
+        emitAll(
+            callbackFlow {
+                // joinedAt 이 없는 문서(진단 화면이 먼저 만든 Member)도 보이게 정렬은 앱에서 한다
+                val reg = membersOf(tripId).addSnapshotListener { snap, error ->
+                    if (error != null) {
+                        // 권한 거부 등 → 끊고 keepListening 이 잠시 뒤 다시 듣는다 (앱은 꺼지지 않음)
+                        close(error)
+                        return@addSnapshotListener
+                    }
+                    trySend(
+                        snap?.documents.orEmpty()
+                            .sortedBy { it.getTimestamp("joinedAt")?.seconds ?: 0L }
+                            .mapNotNull { it.toMember() },
+                    )
+                }
+                awaitClose { reg.remove() }
+            },
+        )
+    }.keepListening("members/$tripId", fallback = emptyList())
 
     override suspend fun searchUsers(query: String): List<Member> {
         val found = runCatching { searchFirestoreUsers(query) }.getOrDefault(emptyList())
-        // 회원가입이 아직 없어 users 가 비어 있으면 가짜 친구 목록에서 찾는다 (초대 연습용)
-        return found.ifEmpty { FakeMemberRepository().searchUsers(query) }
+        // 가짜 친구 목록은 테스트 계정만 (다른 계정은 실제 가입한 사람만 보인다)
+        return if (com.example.mbtrip.session.TestAccess.isTester) found.ifEmpty { FakeMemberRepository().searchUsers(query) } else found
     }
 
     private suspend fun searchFirestoreUsers(query: String): List<Member> {

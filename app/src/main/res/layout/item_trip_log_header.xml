@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 사진 모아보기 — 달마다 제목 줄 (두 칸 전체) -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="bottom"
+    android:orientation="horizontal"
+    android:paddingStart="9dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="9dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/tv_header_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/log_text"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        tools:text="2026년 4월" />
+
+    <TextView
+        android:id="@+id/tv_header_detail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="1dp"
+        android:textColor="@color/log_text_sub"
+        android:textSize="12sp"
+        tools:text="로그 2개 · 사진 5장" />
+</LinearLayout>

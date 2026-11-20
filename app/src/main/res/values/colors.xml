@@ -7,4 +7,49 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- MBTrip 브랜드 팔레트 (ui/theme/Color.kt 와 같은 값) — 중심 색 #A7E7F5 -->
+    <color name="mb_bg">#FFF7FAFB</color>
+    <color name="mb_aqua_50">#FFF3FCFE</color>
+    <color name="mb_aqua_100">#FFE4F8FC</color>
+    <color name="mb_aqua_200">#FFCAF1F9</color>
+    <color name="mb_aqua_300">#FFA7E7F5</color>
+    <color name="mb_aqua_400">#FF7FD9EE</color>
+    <color name="mb_aqua_500">#FF4EC4E0</color>
+    <color name="mb_aqua_600">#FF26A6C6</color>
+    <color name="mb_aqua_700">#FF15809E</color>
+    <color name="mb_ink">#FF0F2A3A</color>
+    <color name="mb_ink_soft">#FF3E5868</color>
+    <color name="mb_muted">#FF7D93A1</color>
+    <color name="mb_faint">#FFB3C3CC</color>
+    <color name="mb_line">#FFE1EDF2</color>
+    <color name="mb_field">#FFF0F7FA</color>
+    <color name="mb_mint">#FFB4EFCB</color>
+    <color name="mb_mint_deep">#FF3FAE76</color>
+    <color name="mb_coral">#FFFF8F7E</color>
+    <color name="mb_sunny">#FFFFD36E</color>
+
+    <!-- 여행 모임 로그 화면 (위 팔레트에서 골라 씀) -->
+    <color name="log_danger">#FFE5484D</color>
+    <!-- 후기 쓰기 화면과 같은 회색 상자 -->
+    <color name="log_box">#FFF6F7F8</color>
+    <color name="log_box_line">#FFDCE1E4</color>
+    <color name="log_bg">@color/mb_bg</color>
+    <color name="log_surface">#FFFFFFFF</color>
+    <color name="log_field">@color/mb_field</color>
+    <color name="log_line">@color/mb_line</color>
+    <color name="log_primary">@color/mb_aqua_700</color>
+    <color name="log_primary_soft">@color/mb_aqua_100</color>
+    <color name="log_sky">@color/mb_aqua_300</color>
+    <color name="log_text">@color/mb_ink</color>
+    <color name="log_text_body">@color/mb_ink_soft</color>
+    <color name="log_text_sub">@color/mb_muted</color>
+    <color name="log_text_hint">@color/mb_faint</color>
+    <color name="log_star">#FFFFC24A</color>
+    <color name="log_star_empty">#FFDCE8ED</color>
+    <color name="log_dot">#FFCFE3EA</color>
+    <color name="log_placeholder">@color/mb_aqua_100</color>
+    <color name="log_scrim">#B30F2A3A</color>
+    <color name="log_pill_dark">#990F2A3A</color>
+    <color name="log_ripple">#3326A6C6</color>
 </resources>

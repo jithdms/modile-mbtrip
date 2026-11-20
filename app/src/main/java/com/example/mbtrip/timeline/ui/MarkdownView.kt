@@ -1,5 +1,21 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.ui.design.bouncyClick
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Mint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,7 +91,7 @@ internal fun MarkdownView(
                         Text(
                             boldText(line.text),
                             fontSize = 14.sp,
-                            color = if (line.checked) TimelineColors.SubText else Color.Black,
+                            color = if (line.checked) TimelineColors.SubText else Ink,
                             textDecoration = if (line.checked) TextDecoration.LineThrough else TextDecoration.None,
                         )
                     }
@@ -97,18 +113,24 @@ internal fun MarkdownView(
  */
 @Composable
 internal fun CheckCircle(checked: Boolean, enabled: Boolean, size: Dp = 20.dp, onClick: () -> Unit) {
-    val fill = Color(0xFF1E1E1E)
+    val fill = Aqua600
+    // 체크하면 바탕이 차오르고 ✓ 가 그어진다
+    val progress by androidx.compose.animation.core.animateFloatAsState(
+        if (checked) 1f else 0f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 500f),
+        label = "check",
+    )
     Box(
         Modifier
             .size(size)
-            .clip(CircleShape)
-            .background(if (checked) fill else Color.White)
-            .border(1.5.dp, if (checked) fill else TimelineColors.Border, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .bouncyClick(CircleShape, enabled = enabled, scaleDown = 0.75f, onClick = onClick)
+            .background(Color.White)
+            .drawBehind { drawCircle(fill, radius = this.size.minDimension / 2 * progress.coerceIn(0f, 1.2f)) }
+            .border(1.5.dp, if (checked) fill else TimelineColors.Border, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        if (checked) {
-            Canvas(Modifier.size(size * 0.55f)) {
+        if (progress > 0.05f) {
+            Canvas(Modifier.size(size * 0.55f).graphicsLayer { scaleX = progress; scaleY = progress }) {
                 val w = this.size.width
                 val h = this.size.height
                 val p = Path().apply {

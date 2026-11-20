@@ -1,5 +1,8 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.ui.theme.Muted
+import com.example.mbtrip.ui.design.MBIcon
+import com.example.mbtrip.R
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -60,7 +63,37 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import com.example.mbtrip.ui.design.MBButton
+import com.example.mbtrip.ui.design.MBButtonStyle
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Aqua800
+import com.example.mbtrip.ui.theme.DangerSoft
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.MBBrush
+import com.example.mbtrip.ui.theme.Sunny
+import com.example.mbtrip.ui.theme.Warning
+import com.example.mbtrip.ui.theme.WarningSoft
 import com.example.mbtrip.timeline.model.Block
+import com.example.mbtrip.siheung.PlaceCategory
+import com.example.mbtrip.siheung.PlaceLocator
+import com.example.mbtrip.siheung.SiheungPlace
+import com.example.mbtrip.siheung.SiheungPlaces
 import com.example.mbtrip.timeline.model.BlockKind
 import com.example.mbtrip.timeline.model.BlockSource
 import com.example.mbtrip.timeline.model.BlockStatus
@@ -72,12 +105,12 @@ import java.time.LocalTime
 private val TAG_OPTIONS = listOf("맛집", "카페", "명소", "액티비티", "쇼핑")
 
 /* 와이어프레임 '방 생성 페이지2' 모달 색 */
-private val ModalBg = Color(0xFFF4F4F4)
-private val FieldBorder = Color(0xFF555555)
-private val Black = Color(0xFF1E1E1E)
-private val TagOn = Color(0xFFA9E5A0)       // 선택된 태그 = 자유 블록 초록
-private val TagOnBorder = Color(0xFF4F9A47)
-private val FieldShape = RoundedCornerShape(14.dp)
+private val ModalBg = Aqua50
+private val FieldBorder = Color(0xFFBFD8E0)
+private val Black = Ink
+private val TagOn = Aqua300                 // 선택된 태그 = 브랜드 아쿠아
+private val TagOnBorder = Aqua600
+private val FieldShape = RoundedCornerShape(16.dp)
 
 /**
  * 블록 추가·수정 모달 (블록 한 번 누르기 / + 버튼) — 화면 가운데 뜨는 카드.
@@ -166,6 +199,34 @@ internal fun BlockEditorSheet(
 
     var mapFull by remember { mutableStateOf(false) }
 
+    // 시흥 추천 장소 (지도 점 · 추천 카드 공용)
+    val siheungPins = rememberSiheungPins()
+    fun chooseSiheung(p: SiheungPlace) {
+        val ll = PlaceLocator.of(p)
+        val categoryTags = PlaceCategory.entries.map { it.tag }.toSet()
+        draft = draft.copy(
+            place = p.name,
+            address = p.address,
+            lat = ll?.lat,
+            lng = ll?.lng,
+            // 종류 태그(#명소·#맛집·#카페)는 고른 곳에 맞춰 바꾼다
+            tags = draft.tags.filterNot { it in categoryTags } + p.category.tag,
+        )
+        results = emptyList()
+        searchMessage = null
+        if (ll == null) {
+            scope.launch {
+                val found = PlaceLocator.locate(context.applicationContext, p)
+                if (found != null && draft.place == p.name && !draft.hasLocation) {
+                    draft = draft.copy(lat = found.lat, lng = found.lng)
+                }
+            }
+        }
+    }
+    val onPinClick: (PlacePin) -> Unit = { pin ->
+        if (editable) SiheungPlaces.byId(pin.id)?.let { chooseSiheung(it) }
+    }
+
     // 지도를 눌렀을 때 (작은 지도·전체 지도 공용): 핀 옮기고 그 위치 주소 채우기
     val pickAt: (Double, Double) -> Unit = { la, ln ->
         draft = draft.copy(lat = la, lng = ln, address = null)
@@ -222,8 +283,10 @@ internal fun BlockEditorSheet(
                 .fillMaxWidth(0.9f)
                 .widthIn(max = 420.dp)
                 .imePadding()
+                // 열릴 때 살짝 작게 시작해 톡 커진다
+                .enterPop(0, from = 0.88f)
                 .clip(RoundedCornerShape(20.dp))
-                .background(ModalBg)
+                .background(Color.White)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -248,6 +311,8 @@ internal fun BlockEditorSheet(
                             prevLat = prev?.lat,
                             prevLng = prev?.lng,
                             spots = spots,
+                            places = siheungPins,
+                            onPlaceClick = onPinClick,
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(RoundedCornerShape(12.dp))
@@ -271,6 +336,7 @@ internal fun BlockEditorSheet(
                         if (draft.hasLocation) "지도를 누르면 핀을 옮길 수 있어요." else "파란 테두리(시흥) 안의 장소를 검색하거나, 지도를 눌러 위치를 찍어주세요.",
                         fontSize = 11.sp, color = TimelineColors.SubText,
                     )
+                    SiheungPinLegend(note = if (editable) "색 점을 누르면 바로 골라져요" else null)
 
                     // 3) 장소
                     Section("장소") {
@@ -286,6 +352,19 @@ internal fun BlockEditorSheet(
                             SearchResults(results, onChoose = { choose(it) }, onClose = { results = emptyList() })
                         }
                         draft.address?.takeIf { it.isNotBlank() }?.let { AddressLine(it) }
+                    }
+
+                    // 시흥 추천 — 시간대·이전 일정 위치를 보고 고른다
+                    if (editable) {
+                        SiheungRecommendations(
+                            draft = draft,
+                            prev = prev ?: allBlocks
+                                .filter { it.id != draft.id && it.date == draft.date && it.end <= draft.start && !it.place.isNullOrBlank() }
+                                .maxByOrNull { it.end },
+                            allBlocks = allBlocks,
+                            enabled = editable,
+                            onChoose = { chooseSiheung(it) },
+                        )
                     }
 
                     // 이전 일정과의 거리
@@ -376,7 +455,7 @@ internal fun BlockEditorSheet(
                     if (canPropose) BigButton("삭제/수정 제안하기", enabled = true) { choosingProposal = true }
                 }
                 else -> {
-                    BigButton(if (isNew) "추가하기" else "저장하기", enabled = editable && problem == null) {
+                    BigButton(if (isNew) "추가하기" else "수정 완료", enabled = editable && problem == null) {
                         onSave(draft.withAutoTitle(original))
                     }
                 }
@@ -424,6 +503,8 @@ internal fun BlockEditorSheet(
             onChoose = { choose(it) },
             onClose = { mapFull = false },
             spots = spots,
+            places = siheungPins,
+            onPlaceClick = onPinClick,
         )
     }
 
@@ -452,13 +533,13 @@ internal fun BlockEditorSheet(
                         fontSize = 13.sp, color = TimelineColors.SubText,
                     )
                     if (onProposeEdit != null) {
-                        ProposalOption("✏️  수정 제안", "시간·장소·메모를 고쳐서 다시 투표에 올려요") {
+                        ProposalOption("수정 제안", "시간·장소·메모를 고쳐서 다시 투표에 올려요") {
                             choosingProposal = false
                             editingProposal = true
                         }
                     }
                     if (onProposeDelete != null) {
-                        ProposalOption("🗑️  삭제 제안", "이 일정을 지울지 동행자에게 물어봐요", danger = true) {
+                        ProposalOption("삭제 제안", "이 일정을 지울지 동행자에게 물어봐요", danger = true) {
                             choosingProposal = false
                             proposingDelete = true
                         }
@@ -551,39 +632,50 @@ internal fun Block.withAutoTitle(original: Block): Block {
 private fun Header(draft: Block, editable: Boolean, onKind: (BlockKind) -> Unit, onClose: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (draft.kind == BlockKind.MOVE) {
-            Text("이동 블록", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("이동 블록", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Ink)
         } else {
             KindToggle(draft.kind, editable, onKind)
         }
         Spacer(Modifier.weight(1f))
         Box(
-            Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onClose),
+            Modifier.size(36.dp).bouncyClick(CircleShape, onClick = onClose),
             contentAlignment = Alignment.Center,
-        ) { Text("✕", fontSize = 18.sp, color = TimelineColors.SubText) }
+        ) { MBIcon(R.drawable.ic_mb_close, size = 18.dp, tint = Muted, contentDescription = "닫기") }
     }
 }
 
 @Composable
 private fun KindToggle(kind: BlockKind, enabled: Boolean, onChange: (BlockKind) -> Unit) {
     val shape = RoundedCornerShape(50)
-    Row(
+    // 고른 쪽으로 색 알약이 미끄러져 간다
+    val x by animateDpAsState(if (kind == BlockKind.FIXED) 70.dp else 0.dp, spring(dampingRatio = 0.7f, stiffness = 420f), label = "kindX")
+    val pill by animateColorAsState(if (kind == BlockKind.FIXED) TimelineColors.Fixed else TimelineColors.Free, label = "kindColor")
+    Box(
         Modifier
-            .width(140.dp)
+            .width(146.dp)
             .clip(shape)
-            .border(1.dp, TimelineColors.Border, shape),
+            .background(Color.White)
+            .border(1.dp, Line, shape)
+            .padding(3.dp),
     ) {
-        listOf(BlockKind.FREE to "자유", BlockKind.FIXED to "확정").forEach { (k, label) ->
-            val selected = k == kind
-            val color = if (k == BlockKind.FIXED) TimelineColors.Fixed else TimelineColors.Free
-            Box(
-                Modifier
-                    .weight(1f)
-                    .background(if (selected) color else Color.White)
-                    .clickable(enabled = enabled && !selected) { onChange(k) }
-                    .padding(vertical = 7.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, fontSize = 13.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Box(
+            Modifier
+                .offset(x = x)
+                .size(width = 70.dp, height = 32.dp)
+                .background(pill, shape),
+        )
+        Row {
+            listOf(BlockKind.FREE to "자유", BlockKind.FIXED to "확정").forEach { (k, label) ->
+                val selected = k == kind
+                Box(
+                    Modifier
+                        .size(width = 70.dp, height = 32.dp)
+                        .clip(shape)
+                        .clickable(enabled = enabled && !selected) { onChange(k) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(label, fontSize = 13.sp, color = Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                }
             }
         }
     }
@@ -593,7 +685,7 @@ private fun KindToggle(kind: BlockKind, enabled: Boolean, onChange: (BlockKind) 
 private fun StatusHint(original: Block, draft: Block, isNew: Boolean, needsProposal: Boolean = false, editingProposal: Boolean = false) {
     val timeChanged = original.start != draft.start || original.end != draft.end
     val text = if (needsProposal) {
-        if (editingProposal) "✏️ 수정 제안 중 · 고친 내용은 '제안됨'으로 바뀌고 다시 투표해요."
+        if (editingProposal) "수정 제안 중 · 고친 내용은 '제안됨'으로 바뀌고 다시 투표해요."
         else "확정된 일정은 바로 고칠 수 없어요. 아래 [삭제/수정 제안하기]로 동행자에게 물어보세요."
     } else when (draft.kind) {
         BlockKind.MOVE -> "시간·이동수단·메모를 바꿀 수 있어요."
@@ -609,7 +701,13 @@ private fun StatusHint(original: Block, draft: Block, isNew: Boolean, needsPropo
             }
         }
     }
-    Text(text, fontSize = 12.sp, color = TimelineColors.SubText)
+    Text(
+        text, fontSize = 12.sp, color = Aqua800, lineHeight = 17.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
 }
 
 /* ───────── 칸들 ───────── */
@@ -617,7 +715,7 @@ private fun StatusHint(original: Block, draft: Block, isNew: Boolean, needsPropo
 @Composable
 private fun Section(label: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp))
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.padding(start = 4.dp))
         content()
     }
 }
@@ -627,9 +725,12 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = Color.White,
     unfocusedContainerColor = Color.White,
     disabledContainerColor = Color.White,
-    focusedBorderColor = Black,
+    focusedBorderColor = Aqua500,
     unfocusedBorderColor = FieldBorder,
     disabledBorderColor = TimelineColors.Axis,
+    cursorColor = Aqua700,
+    focusedTextColor = Ink,
+    unfocusedTextColor = Ink,
 )
 
 /** 장소: 가운데 정렬 글자 + 오른쪽 [검색] */
@@ -646,7 +747,7 @@ private fun PlaceField(
         onValueChange = onChange,
         enabled = enabled,
         singleLine = true,
-        textStyle = TextStyle(fontSize = 16.sp, textAlign = TextAlign.Center),
+        textStyle = TextStyle(fontFamily = com.example.mbtrip.ui.theme.Pretendard, fontSize = 16.sp, textAlign = TextAlign.Center),
         placeholder = { Text("예) 오이도 빨간등대", fontSize = 15.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
         trailingIcon = {
             // 돋보기 아이콘 (찾는 중엔 회색)
@@ -657,7 +758,7 @@ private fun PlaceField(
                     .clickable(enabled = enabled && !searching, onClick = onSearch),
                 contentAlignment = Alignment.Center,
             ) {
-                SearchIcon(if (enabled && !searching) Black else TimelineColors.Axis)
+                SearchIcon(if (enabled && !searching) Aqua700 else TimelineColors.Axis)
             }
         },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -687,18 +788,10 @@ private fun SearchIcon(color: Color, size: Dp = 20.dp) {
     }
 }
 
-/** 모달 아래 큰 검정 버튼 */
+/** 모달 아래 큰 버튼 (브랜드 아쿠아 + 빛 스침) */
 @Composable
 private fun BigButton(text: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(if (enabled) Black else Color(0xFFD6D6D6))
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { Text(text, color = Color.White, fontSize = 16.sp) }
+    MBButton(text = text, onClick = onClick, enabled = enabled, style = MBButtonStyle.Brand, height = 50.dp)
 }
 
 /** 제안 고르기 한 줄 */
@@ -707,9 +800,8 @@ private fun ProposalOption(title: String, desc: String, danger: Boolean = false,
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (danger) Color(0xFFFDECEA) else Color(0xFFF1F7FC))
-            .clickable(onClick = onClick)
+            .bouncyClick(RoundedCornerShape(16.dp), scaleDown = 0.96f, onClick = onClick)
+            .background(if (danger) DangerSoft else Aqua100)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = if (danger) TimelineColors.Error else Black)
@@ -727,10 +819,9 @@ private fun MapCornerButton(text: String, modifier: Modifier = Modifier, onClick
         fontWeight = FontWeight.Medium,
         color = Black,
         modifier = modifier
-            .clip(shape)
+            .bouncyClick(shape, scaleDown = 0.9f, elevation = 3.dp, shadowColor = Aqua500, onClick = onClick)
             .background(Color.White.copy(alpha = 0.95f))
-            .border(1.dp, FieldBorder, shape)
-            .clickable(onClick = onClick)
+            .border(1.dp, Aqua300, shape)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     )
 }
@@ -750,6 +841,8 @@ private fun FullMapDialog(
     onChoose: (PlaceResult) -> Unit,
     onClose: () -> Unit,
     spots: List<MapSpot> = emptyList(),
+    places: List<PlacePin> = emptyList(),
+    onPlaceClick: ((PlacePin) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -797,6 +890,8 @@ private fun FullMapDialog(
                 prevLat = prev?.lat,
                 prevLng = prev?.lng,
                 spots = spots,
+                places = places,
+                onPlaceClick = onPlaceClick,
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -815,7 +910,7 @@ private fun FullMapDialog(
                         onValueChange = { query = it; note = null },
                         enabled = editable,
                         singleLine = true,
-                        textStyle = TextStyle(fontSize = 15.sp),
+                        textStyle = TextStyle(fontFamily = com.example.mbtrip.ui.theme.Pretendard, fontSize = 15.sp),
                         placeholder = { Text("가게·장소 검색", fontSize = 14.sp) },
                         trailingIcon = {
                             // 돋보기 아이콘 (찾는 중엔 회색)
@@ -836,7 +931,7 @@ private fun FullMapDialog(
                         modifier = Modifier.weight(1f).heightIn(min = 50.dp),
                     )
                     Spacer(Modifier.width(8.dp))
-                    MapCornerButton("✕", onClick = onClose)
+                    MapCornerButton("닫기", onClick = onClose)
                 }
                 if (results.isNotEmpty()) {
                     SearchResults(
@@ -869,7 +964,7 @@ private fun FullMapDialog(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.White)
-                    .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(16.dp))
+                    .border(1.dp, Line, RoundedCornerShape(16.dp))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -898,7 +993,7 @@ private fun FullMapDialog(
                         .fillMaxWidth()
                         .height(46.dp)
                         .clip(RoundedCornerShape(23.dp))
-                        .background(if (draft.hasLocation) Black else Color(0xFFD6D6D6))
+                        .background(if (draft.hasLocation) MBBrush.Deep else SolidColor(Line))
                         .clickable(enabled = draft.hasLocation, onClick = onClose),
                     contentAlignment = Alignment.Center,
                 ) { Text("이 위치로 결정", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
@@ -925,7 +1020,7 @@ private fun SearchResults(results: List<PlaceResult>, onChoose: (PlaceResult) ->
             )
         }
         results.forEachIndexed { i, r ->
-            if (i > 0) HorizontalDivider(color = Color(0xFFEDEDED))
+            if (i > 0) HorizontalDivider(color = Line)
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -952,9 +1047,9 @@ private fun SearchResults(results: List<PlaceResult>, onChoose: (PlaceResult) ->
 @Composable
 private fun AddressLine(address: String) {
     Row(Modifier.padding(start = 4.dp), verticalAlignment = Alignment.Top) {
-        Text("📍", fontSize = 12.sp)
+        MBIcon(R.drawable.ic_mb_place, size = 14.dp, tint = Muted, modifier = Modifier.padding(top = 2.dp))
         Spacer(Modifier.width(4.dp))
-        Text(address, fontSize = 13.sp, color = Color(0xFF424242))
+        Text(address, fontSize = 13.sp, color = InkSoft)
     }
 }
 
@@ -974,8 +1069,8 @@ private fun PrevDistanceCard(prev: Block, lat: Double, lng: Double, start: Local
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(if (tight) Color(0xFFFFF3E0) else Color.White)
-            .border(1.dp, if (tight) Color(0xFFFFB74D) else Color(0xFFDDDDDD), shape)
+            .background(if (tight) WarningSoft else Color.White)
+            .border(1.dp, if (tight) Sunny else Line, shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -990,7 +1085,7 @@ private fun PrevDistanceCard(prev: Block, lat: Double, lng: Double, start: Local
         Text(
             if (gap <= 0) "이전 일정이 끝나자마자 시작해요." else "사이에 비는 시간 ${gap}분" + if (tight) " — 걸어가기엔 빠듯해요" else "",
             fontSize = 12.sp,
-            color = if (tight) Color(0xFFE65100) else TimelineColors.SubText,
+            color = if (tight) Warning else TimelineColors.SubText,
         )
         Text("※ 직선거리 기준 대략적인 시간이에요.", fontSize = 10.sp, color = TimelineColors.Axis)
     }
@@ -1010,7 +1105,7 @@ private fun TimeField(draft: Block, enabled: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(draft.timeText(), fontSize = 16.sp, color = if (enabled) Color.Black else TimelineColors.SubText)
+        Text(draft.timeText(), fontSize = 16.sp, color = if (enabled) Ink else TimelineColors.SubText)
         Text(
             "${draft.durationMinutes}분",
             fontSize = 12.sp, color = TimelineColors.SubText,
@@ -1033,7 +1128,7 @@ private fun BoxField(
         enabled = enabled,
         singleLine = minLines == 1,
         minLines = minLines,
-        textStyle = TextStyle(fontSize = 15.sp),
+        textStyle = TextStyle(fontFamily = com.example.mbtrip.ui.theme.Pretendard, fontSize = 15.sp),
         placeholder = if (placeholder != null) { { Text(placeholder, fontSize = 14.sp) } } else null,
         shape = FieldShape,
         colors = fieldColors(),
@@ -1118,7 +1213,7 @@ private fun TagPicker(tags: List<String>, enabled: Boolean, onChange: (List<Stri
                     fontSize = 11.sp,
                     maxLines = 1,
                     softWrap = false,
-                    color = if (enabled) Color.Black else TimelineColors.SubText,
+                    color = if (enabled) Ink else TimelineColors.SubText,
                 )
             }
         }
@@ -1150,7 +1245,7 @@ private fun SmallChip(text: String, selected: Boolean, enabled: Boolean = true, 
         color = when {
             !enabled -> TimelineColors.Axis
             selected -> Color.White
-            else -> Color.Black
+            else -> Ink
         },
         modifier = Modifier
             .clip(shape)

@@ -1,5 +1,21 @@
 package com.example.mbtrip.timeline.ui
 
+import com.example.mbtrip.ui.theme.Muted
+import com.example.mbtrip.ui.design.MBIcon
+import com.example.mbtrip.R
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Mint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -67,17 +83,18 @@ internal fun TimeRangePickerDialog(
             Modifier
                 .fillMaxWidth(0.88f)
                 .widthIn(max = 400.dp)
+                .enterPop(0, from = 0.88f)
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color.White)
                 .padding(horizontal = 18.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("시간", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("시간", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
                 Box(
-                    Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onDismiss),
+                    Modifier.size(36.dp).bouncyClick(CircleShape, onClick = onDismiss),
                     contentAlignment = Alignment.Center,
-                ) { Text("✕", fontSize = 18.sp, color = TimelineColors.SubText) }
+                ) { MBIcon(R.drawable.ic_mb_close, size = 18.dp, tint = Muted, contentDescription = "닫기") }
             }
             Spacer(Modifier.height(8.dp))
 
@@ -93,7 +110,7 @@ internal fun TimeRangePickerDialog(
                 Box(
                     Modifier.fillMaxWidth().height(ItemH)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFFEDEDED)),
+                        .background(Aqua100),
                 )
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -114,7 +131,7 @@ internal fun TimeRangePickerDialog(
             Text(
                 error ?: "${minutesToTime(s).format(HM)} ~ ${minutesToTime(e).format(HM)}  (${e - s}분)",
                 fontSize = 14.sp,
-                color = if (error != null) TimelineColors.Error else Color.Black,
+                color = if (error != null) TimelineColors.Error else Ink,
             )
             Spacer(Modifier.height(12.dp))
             Box(
@@ -122,7 +139,7 @@ internal fun TimeRangePickerDialog(
                     .fillMaxWidth()
                     .height(48.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(if (error == null) Color(0xFF1E1E1E) else Color(0xFFD6D6D6))
+                    .background(if (error == null) Ink else Line)
                     .clickable(enabled = error == null) { onConfirm(minutesToTime(s), minutesToTime(e)) },
                 contentAlignment = Alignment.Center,
             ) { Text("완료", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }

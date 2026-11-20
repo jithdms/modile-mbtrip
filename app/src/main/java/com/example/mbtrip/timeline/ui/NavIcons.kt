@@ -26,6 +26,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.border
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.theme.Danger
+import com.example.mbtrip.ui.theme.Ink
 
 /*
  * 아이콘 라이브러리 없이 Canvas 로 그린 버튼 (잠금 아이콘과 같은 방식).
@@ -34,7 +38,7 @@ import androidx.compose.ui.unit.dp
 
 /** ◀ 뒤로가기 */
 @Composable
-fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = Color.Black) {
+fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = Ink) {
     TapCircle(onClick, "뒤로 가기", modifier) {
         Canvas(Modifier.size(24.dp)) {
             val w = size.width
@@ -52,7 +56,7 @@ fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color 
 
 /** ⌂ 메인(방 만들기)으로 */
 @Composable
-fun HomeButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = Color.Black) {
+fun HomeButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = Ink) {
     TapCircle(onClick, "메인으로 가기", modifier) {
         Canvas(Modifier.size(24.dp)) {
             val w = size.width
@@ -79,7 +83,7 @@ fun HomeButton(onClick: () -> Unit, modifier: Modifier = Modifier, color: Color 
  * 🔔 알림 — 안 읽은 알림이 있으면 오른쪽 위에 빨간 점.
  */
 @Composable
-fun BellButton(onClick: () -> Unit, unread: Int = 0, modifier: Modifier = Modifier, color: Color = Color.Black) {
+fun BellButton(onClick: () -> Unit, unread: Int = 0, modifier: Modifier = Modifier, color: Color = Ink) {
     TapCircle(onClick, if (unread > 0) "알림, 안 읽은 알림 있음" else "알림", modifier) {
         Box {
             Canvas(Modifier.size(24.dp)) {
@@ -104,9 +108,9 @@ fun BellButton(onClick: () -> Unit, unread: Int = 0, modifier: Modifier = Modifi
                     Modifier
                         .align(Alignment.TopEnd)
                         .offset(x = 1.dp, y = 1.dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE53935)),
+                        .size(9.dp)
+                        .background(Danger, CircleShape)
+                        .border(1.dp, Color.White, CircleShape),
                 )
             }
         }
@@ -118,8 +122,8 @@ private fun TapCircle(onClick: () -> Unit, label: String, modifier: Modifier, co
     Box(
         modifier
             .size(48.dp)
-            .clip(CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
+            // 누르면 통통 눌린다
+            .bouncyClick(CircleShape, scaleDown = 0.82f, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { content() }

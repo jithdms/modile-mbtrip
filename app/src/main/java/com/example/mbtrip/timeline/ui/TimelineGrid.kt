@@ -73,24 +73,43 @@ import com.example.mbtrip.timeline.model.MarkerType
 import com.example.mbtrip.timeline.model.TimeMarker
 import java.time.LocalTime
 import kotlin.math.roundToInt
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.composed
+import com.example.mbtrip.ui.design.enterFromBelow
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua400
+import com.example.mbtrip.ui.theme.Aqua600
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Aqua800
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Danger
+import com.example.mbtrip.ui.theme.Faint
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.Mint
+import com.example.mbtrip.ui.theme.MintDeep
+import com.example.mbtrip.ui.theme.Muted
 
 /* ───────────────────────── 색 규칙 (디자인 시스템 확정 전 임시값) ───────────────────────── */
 
 internal object TimelineColors {
-    val Move = Color(0xFF111111)                         // 검정: 이동
-    val Fixed = Color(0xFFAED6F1)                        // 하늘: 확정
-    val Free = Color(0xFFA9E5A0)                         // 초록: 자유
-    val FixedPending = lerp(Fixed, Color.White, 0.55f)   // 연한 하늘: 제안됨·투표중 (반투명 흰색을 덮은 효과)
-    val FreeEmpty = lerp(Free, Color.White, 0.6f)        // 연한 초록: 빈칸
-    val FixedDash = Color(0xFF5DADE2)
-    val FreeDash = Color(0xFF6CBF62)
-    val Border = Color(0xFF9E9E9E)
-    val Axis = Color(0xFFBDBDBD)
-    val GridLine = Color(0xFFEEEEEE)
-    val NowLine = Color(0xFFD32F2F)                      // 빨강: 현재 시각
-    val Marker = Color(0xFF1E88E5)                       // 파랑: 체크인·체크아웃
-    val SubText = Color(0xFF757575)
-    val Error = Color(0xFFD32F2F)
+    val Move = Ink                                        // 남색: 이동
+    val Fixed = Aqua300                                   // 브랜드 아쿠아(#A7E7F5): 확정
+    val Free = Mint                                       // 민트: 자유
+    val FixedPending = lerp(Fixed, Color.White, 0.55f)    // 연한 아쿠아: 제안됨·투표중 (반투명 흰색을 덮은 효과)
+    val FreeEmpty = lerp(Free, Color.White, 0.6f)         // 연한 민트: 빈칸
+    val FixedDash = Aqua600
+    val FreeDash = MintDeep
+    val Border = Color(0xFFA9CBD6)
+    val Axis = Faint
+    val GridLine = Line
+    val NowLine = Danger                                  // 빨강: 현재 시각
+    val Marker = Aqua700                                  // 바다색: 체크인·체크아웃
+    val SubText = Muted
+    val Error = Danger
 }
 
 internal data class CardStyle(
@@ -99,17 +118,17 @@ internal data class CardStyle(
 
 internal fun Block.cardStyle(): CardStyle = when (display) {
     BlockDisplay.MOVE -> CardStyle(TimelineColors.Move, Color.White, TimelineColors.Move, false, "이동")
-    BlockDisplay.FIXED -> CardStyle(TimelineColors.Fixed, Color.Black, TimelineColors.Border, false, "확정")
+    BlockDisplay.FIXED -> CardStyle(TimelineColors.Fixed, Ink, Aqua400, false, "확정")
     BlockDisplay.FIXED_PENDING -> CardStyle(
-        TimelineColors.FixedPending, Color.Black, TimelineColors.FixedDash, true,
+        TimelineColors.FixedPending, Ink, TimelineColors.FixedDash, true,
         if (status == BlockStatus.VOTING) "투표중" else "제안됨",
     )
-    BlockDisplay.FREE -> CardStyle(TimelineColors.Free, Color.Black, TimelineColors.Border, false, "자유")
-    BlockDisplay.FREE_EMPTY -> CardStyle(TimelineColors.FreeEmpty, Color(0xFF4F7F4A), TimelineColors.FreeDash, true, "자유")
+    BlockDisplay.FREE -> CardStyle(TimelineColors.Free, Ink, Color(0xFF8FDCAE), false, "자유")
+    BlockDisplay.FREE_EMPTY -> CardStyle(TimelineColors.FreeEmpty, Color(0xFF2F7A55), TimelineColors.FreeDash, true, "자유")
 }
 
 /** 실선/점선 테두리 */
-internal fun Modifier.blockBorder(color: Color, dashed: Boolean, radius: Dp = 10.dp): Modifier = drawBehind {
+internal fun Modifier.blockBorder(color: Color, dashed: Boolean, radius: Dp = 14.dp): Modifier = drawBehind {
     val stroke = 1.5.dp.toPx()
     val r = radius.toPx()
     drawRoundRect(
@@ -217,7 +236,7 @@ internal fun DayTimelineGrid(
             }
 
             // 블록
-            dayBlocks.forEach { block ->
+            dayBlocks.forEachIndexed { blockIndex, block ->
                 key(block.id) {
                     val isDragging = draggingId == block.id
                     val top = yOf(block.start.toMinutes()) + BLOCK_GAP
@@ -231,17 +250,27 @@ internal fun DayTimelineGrid(
                     } else null
                     val currentOnMoved by rememberUpdatedState(onBlockMoved)
 
+                    // 끌고 있으면 살짝 커지고 그림자가 짙어진다
+                    val lift by animateFloatAsState(if (isDragging) 1f else 0f, spring(dampingRatio = 0.6f, stiffness = 500f), label = "lift")
                     BlockCard(
                         block = block,
                         previewStart = previewStart,
                         onToggleTodo = onToggleTodo?.let { f -> { line: Int -> f(block, line) } },
+                        highlighted = block.id == highlightId,
                         modifier = Modifier
                             .zIndex(if (isDragging) 3f else 0f)
                             .padding(start = AXIS_WIDTH + 8.dp, end = 12.dp)
                             .offset { IntOffset(0, (top.toPx() + if (isDragging) dragDy else 0f).roundToInt()) }
                             .fillMaxWidth()
                             .height(height)
-                            .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(10.dp))
+                            // 날짜를 바꾸면 블록이 위에서부터 차례로 떠오른다
+                            .enterFromBelow(blockIndex, distance = 18.dp, delayStepMs = 45)
+                            .graphicsLayer {
+                                val sc = 1f + 0.03f * lift
+                                scaleX = sc; scaleY = sc
+                            }
+                            // 끌고 있을 땐 그림자 대신 진한 테두리
+                            .then(if (isDragging) Modifier.border(1.dp, Aqua700, RoundedCornerShape(14.dp)) else Modifier)
                             .then(
                                 if (block.locked) Modifier
                                 else Modifier.pointerInput(block, window) {
@@ -344,9 +373,11 @@ private fun BlockCard(
     previewStart: Int?,
     modifier: Modifier = Modifier,
     onToggleTodo: ((Int) -> Unit)? = null,
+    /** 알림에서 눌러 들어온 블록 — 테두리가 숨 쉬듯 빛난다 */
+    highlighted: Boolean = false,
 ) {
     val style = block.cardStyle()
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(14.dp)
     val timeLabel = previewStart?.let {
         "${minutesToTime(it).format(HM)} ~ ${minutesToTime(it + block.durationMinutes).format(HM)}"
     } ?: block.timeText()
@@ -359,6 +390,7 @@ private fun BlockCard(
             .clip(shape)
             .background(style.bg)
             .blockBorder(style.border, style.dashed)
+            .highlightGlow(highlighted, radius = 14.dp)
             .padding(horizontal = 10.dp, vertical = 3.dp),
     ) {
         val sub = style.fg.copy(alpha = 0.7f)
@@ -370,19 +402,18 @@ private fun BlockCard(
                     .offset(x = 8.dp, y = 0.dp)
                     .zIndex(2f)
                     .size(9.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFE53935))
-                    .border(1.5.dp, Color.White, CircleShape),
+                    .background(Danger, CircleShape)
+                    .border(1.dp, Color.White, CircleShape),
             )
         }
         val cardHeight = maxHeight // 안쪽 Column 에서는 maxHeight 를 바로 못 써서 미리 꺼내 둔다
         when {
             maxHeight < 40.dp -> Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    block.displayTitle, color = style.fg, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    block.displayTitle, color = style.fg, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                 )
-                Text(timeLabel, color = sub, fontSize = 10.sp, maxLines = 1)
+                Text(timeLabel, color = sub, fontSize = 10.sp, lineHeight = 13.sp, maxLines = 1)
                 if (block.locked) {
                     Spacer(Modifier.width(4.dp))
                     LockIcon(sub, 10.dp)
@@ -393,82 +424,91 @@ private fun BlockCard(
                 CardTopRow(timeLabel, label, sub, block.locked, labelColor)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        block.displayTitle, color = style.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        block.displayTitle, color = style.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
                     TagPills(tags)
                 }
             }
 
-            else -> Box(Modifier.fillMaxSize()) {
-                Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    CardTopRow(timeLabel, label, sub, block.locked, labelColor)
+            else -> Column(Modifier.fillMaxSize()) {
+                // 줄마다 높이를 정해 두고(아래 LINE_*), 카드에 들어가는 만큼만 보여준다 → 글자가 반쯤 잘리지 않는다
+                val inner = cardHeight - 6.dp
+                var used = LINE_TOP + LINE_TITLE
+                CardTopRow(timeLabel, label, sub, block.locked, labelColor)
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        block.displayTitle, color = style.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        block.displayTitle, color = style.fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 18.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
-                    if (block.kind == BlockKind.FIXED) {
-                        val (done, total) = todoProgress(block.todo)
-                        val extra = listOfNotNull(
-                            block.place?.takeIf { it.isNotBlank() },
-                            if (total > 0) "할 일 $done/$total" else null,
-                        ).joinToString(" · ")
-                        if (extra.isNotEmpty()) {
-                            Text(extra, color = sub, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        // 메모 (모달에 적은 것) — 한 줄, 공간이 넉넉하면 두 줄
-                        val memo = block.memo?.trim().orEmpty()
-                        val memoLines = if (memo.isEmpty()) 0 else if (cardHeight >= 150.dp) 2 else 1
-                        if (memoLines > 0) {
-                            Text(
-                                "📝 $memo",
-                                color = style.fg.copy(alpha = 0.85f), fontSize = 11.sp,
-                                maxLines = memoLines, overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        // 남는 높이에 할 일 체크리스트 (한 줄 22dp). 위쪽 글줄들 ≈ 54dp + 메모 줄당 15dp
-                        val checks = remember(block.todo) { parseMarkdown(block.todo).filterIsInstance<MdLine.Check>() }
-                        val used = 54.dp + 15.dp * memoLines
-                        val fit = ((cardHeight - used) / 22.dp).toInt().coerceAtLeast(0)
-                        if (checks.isNotEmpty() && fit > 0) {
-                            val shown = if (checks.size > fit) checks.take((fit - 1).coerceAtLeast(1)) else checks
-                            Spacer(Modifier.height(2.dp))
-                            shown.forEach { c ->
-                                Row(Modifier.height(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    CheckCircle(
-                                        checked = c.checked,
-                                        enabled = onToggleTodo != null, // 잠긴·확정 블록도 체크는 됨
-                                        size = 16.dp,
-                                    ) { onToggleTodo?.invoke(c.lineIndex) }
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        c.text.replace("**", ""),
-                                        fontSize = 12.sp,
-                                        color = if (c.checked) sub else style.fg,
-                                        textDecoration = if (c.checked) TextDecoration.LineThrough else TextDecoration.None,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
+                    TagPills(tags)
+                }
+                if (block.kind == BlockKind.FIXED) {
+                    val (done, total) = todoProgress(block.todo)
+                    // 장소 이름이 제목과 같으면 한 번만
+                    val place = block.place?.trim()?.takeIf { it.isNotBlank() && it != block.displayTitle }
+                    val extra = listOfNotNull(place, if (total > 0) "할 일 $done/$total" else null).joinToString(" · ")
+                    if (extra.isNotEmpty() && used + LINE_SMALL <= inner) {
+                        Text(extra, color = sub, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        used += LINE_SMALL
+                    }
+                    // 메모 — 남는 높이만큼 (최대 두 줄)
+                    val memo = block.memo?.trim().orEmpty()
+                    val memoLines = if (memo.isEmpty()) 0 else ((inner - used) / LINE_SMALL).toInt().coerceIn(0, 2)
+                    if (memoLines > 0) {
+                        Text(
+                            memo,
+                            color = style.fg.copy(alpha = 0.85f), fontSize = 11.sp, lineHeight = 14.sp,
+                            maxLines = memoLines, overflow = TextOverflow.Ellipsis,
+                        )
+                        used += LINE_SMALL * memoLines
+                    }
+                    // 남는 높이에 할 일 체크리스트 (한 줄 22dp)
+                    val checks = remember(block.todo) { parseMarkdown(block.todo).filterIsInstance<MdLine.Check>() }
+                    val fit = ((inner - used - 2.dp) / LINE_CHECK).toInt().coerceAtLeast(0)
+                    if (checks.isNotEmpty() && fit > 0) {
+                        val shown = if (checks.size > fit) checks.take((fit - 1).coerceAtLeast(1)) else checks
+                        Spacer(Modifier.height(2.dp))
+                        shown.forEach { c ->
+                            Row(Modifier.height(LINE_CHECK), verticalAlignment = Alignment.CenterVertically) {
+                                CheckCircle(
+                                    checked = c.checked,
+                                    enabled = onToggleTodo != null, // 잠긴·확정 블록도 체크는 됨
+                                    size = 16.dp,
+                                ) { onToggleTodo?.invoke(c.lineIndex) }
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    c.text.replace("**", ""),
+                                    fontSize = 12.sp, lineHeight = 15.sp,
+                                    color = if (c.checked) sub else style.fg,
+                                    textDecoration = if (c.checked) TextDecoration.LineThrough else TextDecoration.None,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            if (shown.size < checks.size) {
-                                Text("외 ${checks.size - shown.size}개", fontSize = 10.sp, color = sub)
-                            }
+                        }
+                        if (shown.size < checks.size) {
+                            Text("외 ${checks.size - shown.size}개", fontSize = 10.sp, lineHeight = 13.sp, color = sub)
                         }
                     }
                 }
-                TagPills(tags, Modifier.align(Alignment.BottomEnd).padding(bottom = 3.dp))
             }
         }
     }
 }
 
+/* 카드 한 줄 높이 (글자 크기 + 줄 간격) */
+private val LINE_TOP = 15.dp
+private val LINE_TITLE = 19.dp
+private val LINE_SMALL = 14.dp
+private val LINE_CHECK = 22.dp
+
 @Composable
 private fun CardTopRow(timeLabel: String, label: String, color: Color, locked: Boolean, labelColor: Color? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(timeLabel, color = color, fontSize = 11.sp, maxLines = 1)
+        Text(timeLabel, color = color, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 1)
         Spacer(Modifier.weight(1f))
         Text(
-            label, color = labelColor ?: color, fontSize = 10.sp, maxLines = 1,
+            label, color = labelColor ?: color, fontSize = 10.sp, lineHeight = 15.sp, maxLines = 1,
             fontWeight = if (labelColor != null) FontWeight.Bold else FontWeight.Normal,
         )
         if (locked) {
@@ -514,14 +554,36 @@ private fun TagPills(tags: List<String>, modifier: Modifier = Modifier) {
             Text(
                 "#$tag",
                 fontSize = 10.sp,
-                color = Color(0xFF333333),
+                lineHeight = 13.sp,
+                color = Aqua800,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 modifier = Modifier
                     .clip(pill)
-                    .background(Color.White)
-                    .border(0.5.dp, Color(0x33000000), pill)
+                    .background(Color.White.copy(alpha = 0.9f))
+                    .border(0.5.dp, Aqua400, pill)
                     .padding(horizontal = 7.dp, vertical = 1.dp),
             )
         }
+    }
+}
+
+/**
+ * 알림에서 눌러 들어온 블록 — 산호색 테두리가 숨 쉬듯 빛난다.
+ * 강조 중인 카드에서만 애니메이션을 돌린다 (다른 카드는 아무것도 안 함).
+ */
+private fun Modifier.highlightGlow(enabled: Boolean, radius: Dp): Modifier = composed {
+    if (!enabled) return@composed Modifier
+    val t = rememberInfiniteTransition(label = "glow")
+    val glow = t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(650), RepeatMode.Reverse), label = "glowA")
+    Modifier.drawBehind {
+        val st = 3.dp.toPx()
+        drawRoundRect(
+            color = Coral.copy(alpha = glow.value),
+            topLeft = Offset(st / 2, st / 2),
+            size = Size(size.width - st, size.height - st),
+            cornerRadius = CornerRadius(radius.toPx()),
+            style = Stroke(st),
+        )
     }
 }

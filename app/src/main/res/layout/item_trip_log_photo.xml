@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 사진 모아보기 — 사진 1칸. 로그의 첫 사진(표지)에만 제목·날짜·사진 수가 붙는다 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:clipToPadding="false"
+    android:padding="6dp">
+
+    <!-- 사진 칸: 뒤에 아주 옅은 그림자(elevation 3dp) + 얇은 테두리(foreground) -->
+    <FrameLayout
+        android:id="@+id/tile"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_log_photo_card"
+        android:clipToOutline="true"
+        android:elevation="3dp"
+        android:outlineAmbientShadowColor="#330F2A3A"
+        android:outlineSpotShadowColor="#330F2A3A"
+        android:foreground="@drawable/fg_log_photo_tile">
+
+        <ImageView
+            android:id="@+id/iv_photo"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:scaleType="centerCrop"
+            tools:src="@drawable/travel_main_photo" />
+
+        <!-- 사진이 없는 로그 -->
+        <ImageView
+            android:id="@+id/iv_no_photo"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_log_photos"
+            android:tint="@color/log_sky"
+            android:visibility="gone" />
+
+        <View
+            android:id="@+id/scrim"
+            android:layout_width="match_parent"
+            android:layout_height="96dp"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_log_tile_scrim" />
+
+        <LinearLayout
+            android:id="@+id/layout_caption"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <TextView
+                android:id="@+id/tv_tile_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                tools:text="느리게 걸었던 거북섬 2박 3일" />
+
+            <TextView
+                android:id="@+id/tv_tile_date"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:alpha="0.85"
+                android:maxLines="1"
+                android:textColor="@android:color/white"
+                android:textSize="11sp"
+                tools:text="04.11 – 04.13 · 시흥 거북섬" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_tile_count"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="10dp"
+            android:background="@drawable/bg_log_pill_dark"
+            android:drawableStart="@drawable/ic_log_photos_small"
+            android:drawablePadding="4dp"
+            android:drawableTint="@android:color/white"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="9dp"
+            android:textColor="@android:color/white"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            tools:text="3" />
+    </FrameLayout>
+</FrameLayout>

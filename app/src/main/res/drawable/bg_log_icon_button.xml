@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 동그란 눌림 효과 (뒤로 가기 · 지우기) -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/log_ripple">
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="@android:color/white" />
+        </shape>
+    </item>
+</ripple>

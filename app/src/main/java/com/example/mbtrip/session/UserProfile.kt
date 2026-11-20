@@ -16,24 +16,37 @@ object UserProfile {
     private const val PREFS = "mbtrip_user"
     private const val KEY_JP = "jpScore"
 
+    /**
+     * 계정마다 따로 기억한다 (jpScore_{uid}). 그래서 로그아웃했다 다시 로그인해도 그대로이고,
+     * 같은 폰에서 다른 계정으로 로그인해도 섞이지 않는다.
+     */
+    private fun key(): String = FirebaseAuth.getInstance().currentUser?.uid?.let { "${KEY_JP}_$it" } ?: KEY_JP
+
     fun jpScore(context: Context): Int? =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_JP, -1).takeIf { it in 0..100 }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(key(), -1).takeIf { it in 0..100 }
 
     fun hasDiagnosis(context: Context): Boolean = jpScore(context) != null
 
     /** 진단 결과 저장. 폰에는 바로, Firestore 는 익명 로그인 뒤 */
     suspend fun saveJpScore(context: Context, jpScore: Int) {
         require(jpScore in 0..100)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_JP, jpScore).apply()
         val auth = FirebaseAuth.getInstance()
-        val uid = auth.currentUser?.uid ?: auth.signInAnonymously().await().user?.uid ?: return
+        val uid = auth.currentUser?.uid ?: auth.signInAnonymously().await().user?.uid
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(key(), jpScore).apply()
+        if (uid == null) return
         FirebaseFirestore.getInstance().collection("users").document(uid)
             .set(mapOf("userId" to uid, "jpScore" to jpScore), SetOptions.merge())
             .await()
     }
 
-    /** 개발용: 진단을 처음부터 다시 하게 */
+    /** 다른 폰에서 한 진단 점수를 이 폰에도 기억 (서버에는 쓰지 않음) */
+    fun rememberLocally(context: Context, jpScore: Int) {
+        if (jpScore !in 0..100) return
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(key(), jpScore).apply()
+    }
+
+    /** 진단을 처음부터 다시 하게 (로그아웃 때도 쓴다) */
     fun resetDiagnosis(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_JP).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(key()).apply()
     }
 }

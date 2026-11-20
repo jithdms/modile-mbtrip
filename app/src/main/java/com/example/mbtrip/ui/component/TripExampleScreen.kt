@@ -1,28 +1,83 @@
 package com.example.mbtrip.ui.component
 
+import androidx.compose.ui.graphics.SolidColor
+import com.example.mbtrip.R
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Calendar
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import com.example.mbtrip.ui.design.MBButton
+import com.example.mbtrip.ui.design.MBButtonStyle
+import com.example.mbtrip.ui.design.MBCard
+import com.example.mbtrip.ui.design.MBDateRangeSheet
+import com.example.mbtrip.ui.design.RegionPickerSheet
+import com.example.mbtrip.siheung.PendingRoutine
+import com.example.mbtrip.session.TripSession
+import com.example.mbtrip.ui.design.MBIcon
+import androidx.compose.animation.core.tween
+import com.example.mbtrip.ui.design.SectionLabel
+import com.example.mbtrip.ui.design.SkyBackground
+import com.example.mbtrip.ui.design.SoftBadge
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterFromBelow
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.design.mbFieldColors
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Aqua200
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Coral
+import com.example.mbtrip.ui.theme.Danger
+import com.example.mbtrip.ui.theme.Faint
+import com.example.mbtrip.ui.theme.Field
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.Line
+import com.example.mbtrip.ui.theme.MBBrush
+import com.example.mbtrip.ui.theme.Muted
 
 @Composable
 fun TripExampleScreen(
@@ -36,7 +91,8 @@ fun TripExampleScreen(
     onCreateTrip: ((departure: String, arrival: String, dateRange: String, headcount: String) -> String?)? = null,
     /** [초대코드로 참여하기] — null 이면 버튼 숨김 */
     onJoinWithCode: (() -> Unit)? = null,
-    // 하단 바: 메뉴(여행 기록) · 알림 · 그룹(친구) · 마이페이지
+    // 하단 바: 내 여행 · 여행 로그 · 알림 · 친구 · 마이페이지
+    onMyTripsClick: () -> Unit = {},
     onMenuClick: () -> Unit = {},
     onNotificationsClick: () -> Unit = {},
     onFriendsClick: () -> Unit = {},
@@ -56,391 +112,356 @@ fun TripExampleScreen(
 
     // 달력 팝업 표시 여부 및 선택 모드 ("START" = 출발일 선택 중, "END" = 도착일 선택 중)
     var showCalendarDialog by remember { mutableStateOf(false) }
-    var selectingMode by remember { mutableStateOf("START") }
+    // 지역 고르기 모달 ("출발" / "도착" / null)
+    var pickingRegion by remember { mutableStateOf<String?>(null) }
 
-    // 달력 팝업 내부의 현재 연/월 상태
-    var calendarYear by remember { mutableStateOf(startDate.year) }
-    var calendarMonth by remember { mutableStateOf(startDate.monthValue - 1) } // 0~11
 
     // 명수 ('명' 고정)
     var headcountNumber by remember { mutableStateOf("3") }
 
-    Scaffold(
-        topBar = {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(
-                        text = "방 만들기",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp, horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onMenuClick) {
-                        BarIcon("menu_burger", "☰", "메뉴")
-                    }
-                    IconButton(onClick = onNotificationsClick) {
-                        // 안 읽은 알림이 있으면 오른쪽 위 빨간 점
-                        BadgedBox(badge = { if (hasUnreadNotifications) Badge() }) {
-                            BarIcon("bell", "🔔", if (hasUnreadNotifications) "알림, 안 읽은 알림 있음" else "알림")
-                        }
-                    }
-                    IconButton(onClick = onFriendsClick) {
-                        BarIcon("users_alt", "👥", "그룹")
-                    }
-                    IconButton(onClick = onMyPageClick) {
-                        BarIcon("user", "👤", "마이페이지")
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(20.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
+    // 출발 ⇄ 도착 바꾸기 버튼 (누르면 반 바퀴 돈다)
+    var swapTurns by remember { mutableIntStateOf(0) }
+    val swapRotation by animateFloatAsState(swapTurns * 180f, tween(280), label = "swap")
+
+    SkyBackground(Modifier.fillMaxSize(), intensity = 0.9f) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp),
+                ) {
+                    Text(
+                        "어디로 떠나볼까요?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Muted,
+                        modifier = Modifier.enterFromBelow(0),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "방 만들기",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Ink,
+                        modifier = Modifier.enterFromBelow(1, distance = 14.dp),
+                    )
+                }
+            },
+            bottomBar = {
+                MBBottomBar(
+                    selected = null,
+                    hasUnreadNotifications = hasUnreadNotifications,
+                    onSelect = { tab ->
+                        when (tab) {
+                            BottomTab.MyTrips -> onMyTripsClick()
+                            BottomTab.TripLog -> onMenuClick()
+                            BottomTab.Notifications -> onNotificationsClick()
+                            BottomTab.Friends -> onFriendsClick()
+                            BottomTab.MyPage -> onMyPageClick()
+                        }
+                    },
+                )
+            }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                MBCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .enterFromBelow(2, distance = 40.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     // 1. 출발 / 도착
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "출발", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            OutlinedTextField(
-                                value = departure,
-                                onValueChange = { departure = it },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                    Column {
+                        SectionLabel("어디에서 어디로", icon = R.drawable.ic_mb_place)
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("→", style = MaterialTheme.typography.titleMedium)
-                            Text("←", style = MaterialTheme.typography.titleMedium)
-                        }
+                            RegionTile(
+                                caption = "출발",
+                                value = departure,
+                                active = pickingRegion == "출발",
+                                modifier = Modifier.weight(1f),
+                            ) { pickingRegion = "출발" }
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "도착", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            OutlinedTextField(
+                            // 가운데 ⇄ — 누르면 출발·도착이 바뀌며 빙글 돈다
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 8.dp)
+                                    .size(40.dp)
+                                    .bouncyClick(CircleShape) {
+                                        val d = departure
+                                        departure = arrival
+                                        arrival = d
+                                        swapTurns++
+                                    }
+                                    .background(Color.White, CircleShape)
+                                    .border(1.dp, Line, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                MBIcon(
+                                    R.drawable.ic_mb_swap, size = 20.dp, tint = Aqua700,
+                                    contentDescription = "출발·도착 바꾸기",
+                                    modifier = Modifier.rotate(swapRotation),
+                                )
+                            }
+
+                            RegionTile(
+                                caption = "도착",
                                 value = arrival,
-                                onValueChange = { arrival = it },
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp)
-                            )
+                                active = pickingRegion == "도착",
+                                modifier = Modifier.weight(1f),
+                            ) { pickingRegion = "도착" }
                         }
                     }
 
                     // 2. 날짜 선택 영역 (하나의 큰 상자로 감싸기)
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(text = "날짜 선택", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        OutlinedCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.outlinedCardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                // 출발일 영역
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            selectingMode = "START"
-                                            calendarYear = startDate.year
-                                            calendarMonth = startDate.monthValue - 1
-                                            showCalendarDialog = true
-                                        }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(text = startDate.format(dateFormatter), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                        Icon(imageVector = Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-
-                                // 가운데 고정되는 ~ 기호
-                                Text(
-                                    text = "~",
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    textAlign = TextAlign.Center
-                                )
-
-                                // 도착일 영역
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            selectingMode = "END"
-                                            calendarYear = endDate.year
-                                            calendarMonth = endDate.monthValue - 1
-                                            showCalendarDialog = true
-                                        }
-                                        .padding(vertical = 8.dp, horizontal = 4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(text = endDate.format(dateFormatter), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                        Icon(imageVector = Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    }
-                                }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SectionLabel("날짜 선택", icon = R.drawable.ic_mb_calendar, modifier = Modifier.weight(1f))
+                            // 몇 박 며칠 — 날짜가 바뀌면 위아래로 넘어가며 바뀐다
+                            val nights = ChronoUnit.DAYS.between(startDate, endDate).coerceAtLeast(0)
+                            AnimatedContent(
+                                targetState = nights,
+                                transitionSpec = { numberSlide(targetState > initialState) },
+                                label = "nights",
+                            ) { n ->
+                                SoftBadge(if (n == 0L) "당일치기" else "${n}박 ${n + 1}일")
                             }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Field)
+                                .border(1.dp, Line, RoundedCornerShape(18.dp))
+                                .padding(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // 출발일 영역
+                            DateTile(
+                                caption = "가는 날",
+                                text = startDate.format(dateFormatter),
+                                active = showCalendarDialog,
+                                modifier = Modifier.weight(1f),
+                            ) { showCalendarDialog = true }
+
+                            // 가운데 고정되는 ~ 기호
+                            Text(
+                                text = "~",
+                                modifier = Modifier.padding(horizontal = 6.dp),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Faint,
+                                textAlign = TextAlign.Center
+                            )
+
+                            // 도착일 영역
+                            DateTile(
+                                caption = "오는 날",
+                                text = endDate.format(dateFormatter),
+                                active = showCalendarDialog,
+                                modifier = Modifier.weight(1f),
+                            ) { showCalendarDialog = true }
                         }
                     }
 
-                    // 3. 명수 입력 ('명' 고정)
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(text = "명수", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        OutlinedTextField(
-                            value = headcountNumber,
-                            onValueChange = { newValue ->
-                                if (newValue.all { it.isDigit() }) {
-                                    headcountNumber = newValue
-                                }
-                            },
-                            suffix = {
-                                Text(
-                                    text = "명",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            modifier = Modifier.width(140.dp),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp)
+                    // 3. 명수 ('명' 고정) — − / + 로 조절, 숫자는 넘어가며 바뀐다
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SectionLabel("명수", icon = R.drawable.ic_mb_group, modifier = Modifier.weight(1f))
+                        val n = headcountNumber.toIntOrNull() ?: 1
+                        StepButton("−", enabled = n > 1) { headcountNumber = (n - 1).coerceAtLeast(1).toString() }
+                        AnimatedContent(
+                            targetState = n,
+                            transitionSpec = { numberSlide(targetState > initialState) },
+                            modifier = Modifier.width(64.dp),
+                            label = "headcount",
+                        ) { v ->
+                            Text(
+                                "${v}명",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Ink,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        StepButton("+", enabled = n < 30) { headcountNumber = (n + 1).coerceAtMost(30).toString() }
+                    }
+                }
+
+                // 생성하기 + 초대코드로 참여하기 (한 덩어리로 맨 아래에)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .enterFromBelow(4, distance = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    MBTripButton(
+                        text = "생성하기",
+                        onClick = {
+                            val range = "${startDate.format(dateFormatter)} ~ ${endDate.format(dateFormatter)}"
+                            val problem = onCreateTrip?.invoke(departure, arrival, range, "${headcountNumber}명")
+                            if (problem != null) {
+                                Toast.makeText(context, problem, Toast.LENGTH_SHORT).show()
+                            } else {
+                                onNavigateNext()
+                            }
+                        },
+                        isPrimary = true,
+                        modifier = Modifier.padding(bottom = if (onJoinWithCode != null) 10.dp else 16.dp)
+                    )
+                    if (onJoinWithCode != null) {
+                        MBButton(
+                            text = "초대코드로 참여하기",
+                            onClick = onJoinWithCode,
+                            style = MBButtonStyle.Outline,
+                            leadingIcon = R.drawable.ic_mb_key,
+                            height = 48.dp,
+                            modifier = Modifier.padding(bottom = 8.dp),
                         )
                     }
                 }
-            }
 
-            // 생성하기 + 초대코드로 참여하기 (한 덩어리로 맨 아래에)
-            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                MBTripButton(
-                    text = "생성하기",
-                    onClick = {
+                // 추천 투어 루틴 — 미리보기 → [이 순서로 돌아다니기] 로 바로 여행 만들기
+                TourRoutineSection(
+                    modifier = Modifier.enterFromBelow(5, distance = 40.dp).padding(bottom = 16.dp),
+                    onApply = { routine ->
+                        // 루틴은 시흥 코스라 도착을 시흥으로, 루틴이 더 길면 오는 날을 늘린다
+                        arrival = "시흥"
+                        val needEnd = startDate.plusDays((routine.days.size - 1).toLong())
+                        val extended = endDate.isBefore(needEnd)
+                        if (extended) endDate = needEnd
                         val range = "${startDate.format(dateFormatter)} ~ ${endDate.format(dateFormatter)}"
-                        val problem = onCreateTrip?.invoke(departure, arrival, range, "${headcountNumber}명")
+                        val problem = onCreateTrip?.invoke(departure, "시흥", range, "${headcountNumber}명")
                         if (problem != null) {
                             Toast.makeText(context, problem, Toast.LENGTH_SHORT).show()
                         } else {
+                            TripSession.tripId?.let { PendingRoutine.arm(routine, it) }
+                            Toast.makeText(
+                                context,
+                                if (extended) "${routine.lengthLabel} 코스라 오는 날을 ${endDate.format(dateFormatter)}로 맞췄어요."
+                                else "일정표를 열면 '${routine.title}' 순서대로 들어가 있어요.",
+                                Toast.LENGTH_SHORT,
+                            ).show()
                             onNavigateNext()
                         }
                     },
-                    isPrimary = true,
-                    modifier = Modifier.padding(bottom = if (onJoinWithCode != null) 4.dp else 16.dp)
                 )
-                if (onJoinWithCode != null) {
-                    TextButton(
-                        onClick = onJoinWithCode,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    ) { Text("초대코드로 참여하기") }
-                }
             }
         }
     }
 
-    // 날짜 선택용 커스텀 캘린더 다이얼로그 (팝업)
+    // 기간 선택 — 앱 공용 달력 모달. 달력 하나에서 가는 날 → 오는 날 순서로 누른다
     if (showCalendarDialog) {
-        val cal = Calendar.getInstance().apply {
-            set(calendarYear, calendarMonth, 1)
-        }
-        val firstDayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-        val maxDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-
-        AlertDialog(
-            onDismissRequest = { showCalendarDialog = false },
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (selectingMode == "START") "출발 날짜 선택" else "도착 날짜 선택",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = {
-                            if (calendarMonth == 0) {
-                                calendarMonth = 11
-                                calendarYear -= 1
-                            } else {
-                                calendarMonth -= 1
-                            }
-                        }, modifier = Modifier.size(28.dp)) {
-                            Icon(imageVector = Icons.Default.KeyboardArrowLeft, contentDescription = "이전달")
-                        }
-                        Text(
-                            text = "$calendarYear.${String.format("%02d", calendarMonth + 1)}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
-                        IconButton(onClick = {
-                            if (calendarMonth == 11) {
-                                calendarMonth = 0
-                                calendarYear += 1
-                            } else {
-                                calendarMonth += 1
-                            }
-                        }, modifier = Modifier.size(28.dp)) {
-                            Icon(imageVector = Icons.Default.KeyboardArrowRight, contentDescription = "다음달")
-                        }
-                    }
-                }
+        MBDateRangeSheet(
+            title = "여행 날짜",
+            initialStart = startDate,
+            initialEnd = endDate,
+            startLabel = "가는 날",
+            endLabel = "오는 날",
+            onDismiss = { showCalendarDialog = false },
+            onConfirm = { s, e ->
+                startDate = s
+                endDate = e
+                showCalendarDialog = false
             },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 요일 헤더
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                        listOf("일", "월", "화", "수", "목", "금", "토").forEach { day ->
-                            Text(
-                                text = day,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(32.dp),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
+        )
+    }
 
-                    // 날짜 셀 생성
-                    val cells = mutableListOf<Int?>()
-                    for (i in 1 until firstDayOfWeek) cells.add(null)
-                    for (d in 1..maxDays) cells.add(d)
-
-                    cells.chunked(7).forEach { week ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                            for (i in 0 until 7) {
-                                val day = if (i < week.size) week[i] else null
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(18.dp))
-                                        .clickable(enabled = day != null) {
-                                            if (day != null) {
-                                                val selectedDate = LocalDate.of(calendarYear, calendarMonth + 1, day)
-                                                if (selectingMode == "START") {
-                                                    startDate = selectedDate
-                                                    if (startDate.isAfter(endDate)) {
-                                                        endDate = startDate.plusDays(2)
-                                                    }
-                                                } else {
-                                                    endDate = selectedDate
-                                                    if (endDate.isBefore(startDate)) {
-                                                        startDate = endDate
-                                                    }
-                                                }
-                                                showCalendarDialog = false
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (day != null) {
-                                        Text(
-                                            text = "$day",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+    // 출발·도착 지역 목록
+    pickingRegion?.let { which ->
+        RegionPickerSheet(
+            title = "$which 지역",
+            selected = if (which == "출발") departure else arrival,
+            onDismiss = { pickingRegion = null },
+            onPick = { city ->
+                if (which == "출발") departure = city else arrival = city
+                pickingRegion = null
             },
-            confirmButton = {
-                TextButton(onClick = { showCalendarDialog = false }) {
-                    Text("닫기")
-                }
-            }
         )
     }
 }
-/**
- * 하단 바 아이콘. res/drawable 에 그림(name)이 있으면 그 그림, 없으면 이모지(fallback).
- * 그림 파일을 이름으로 찾아서, 파일이 아직 없어도 빌드가 깨지지 않는다.
- */
-@Composable
-private fun BarIcon(name: String, fallback: String, contentDescription: String) {
-    val context = LocalContext.current
-    val resId = remember(name) { context.resources.getIdentifier(name, "drawable", context.packageName) }
-    if (resId != 0) {
-        Icon(painter = painterResource(id = resId), contentDescription = contentDescription, modifier = Modifier.size(24.dp))
+
+/* ───────────────────────── 작은 부품 ───────────────────────── */
+
+/** 숫자가 커지면 위로, 작아지면 아래로 넘어간다 */
+private fun numberSlide(up: Boolean): ContentTransform =
+    if (up) {
+        (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
     } else {
-        Text(fallback, fontSize = 20.sp)
+        (slideInVertically { -it } + fadeIn()) togetherWith (slideOutVertically { it } + fadeOut())
+    }
+
+/** 출발 / 도착 칸 — 누르면 지역 목록이 열린다 */
+@Composable
+private fun RegionTile(caption: String, value: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    val border by animateColorAsState(if (active) Aqua500 else Line, label = "regionBorder")
+    Column(
+        modifier
+            .bouncyClick(shape, onClick = onClick)
+            .background(Color.White, shape)
+            .border(1.dp, border, shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(caption, fontSize = 11.sp, color = Muted)
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                value.ifBlank { "선택" },
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (value.isBlank()) Faint else Ink,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            MBIcon(R.drawable.ic_mb_chevron_right, size = 18.dp, tint = Muted)
+        }
+    }
+}
+
+/** 가는 날 / 오는 날 칸 — 누르면 기간 달력이 열린다 */
+@Composable
+private fun DateTile(caption: String, text: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val bg by animateColorAsState(if (active) Aqua200 else Color.White, label = "dateBg")
+    Column(
+        modifier
+            .bouncyClick(RoundedCornerShape(14.dp), scaleDown = 0.95f, onClick = onClick)
+            .background(bg, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(caption, fontSize = 11.sp, color = Muted, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(2.dp))
+        Text(text = text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1)
+    }
+}
+
+@Composable
+private fun StepButton(symbol: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(38.dp)
+            .bouncyClick(CircleShape, enabled = enabled, onClick = onClick)
+            .background(if (enabled) Color.White else Field, CircleShape)
+            .border(1.dp, Line, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(symbol, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = if (enabled) Ink else Faint)
     }
 }

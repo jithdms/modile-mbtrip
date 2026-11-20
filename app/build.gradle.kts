@@ -76,4 +76,16 @@ dependencies {
     // 일정 모달 지도 (OpenStreetMap · API 키 필요 없음)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // 여행 모임 로그 XML 화면: 사진 그리드(RecyclerView) · 사진 슬라이드(ViewPager2) · ImageView 사진 읽기(Coil)
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
+    implementation("io.coil-kt:coil:2.7.0")
 }
+// 압축을 덮어써서 남은 '이제 안 쓰는 파일' 정리 — 같은 이름의 그림이 둘이면 빌드가 실패해서 빌드 전에 지운다
+val removeStaleResources by tasks.registering(Delete::class) {
+    delete(
+        "src/main/res/drawable/default_profile.jpg",
+        "src/main/res/drawable/default_profile.xml",
+    )
+}
+tasks.named("preBuild") { dependsOn(removeStaleResources) }

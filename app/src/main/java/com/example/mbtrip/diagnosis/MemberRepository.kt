@@ -17,7 +17,7 @@ class MemberRepository(
         require(tripId.isNotBlank()) { "여행 방 정보가 필요해요." }
         require(jpScore in 0..100)
         val user = auth.currentUser ?: auth.signInAnonymously().await().user
-            ?: error("Firebase 사용자 인증에 실패했어요.")
+            ?: error("로그인 정보를 확인하지 못했어요.")
         saveJpScore(user.uid, tripId, jpScore)
         return user.uid
     }

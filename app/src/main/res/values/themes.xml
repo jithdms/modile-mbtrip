@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.MBTrip" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- 글꼴: 프리텐다드 (XML 화면 · 시스템 대화상자) — Compose 화면은 ui/theme/Type.kt -->
+    <style name="Theme.MBTrip" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">@font/pretendard</item>
+    </style>
 </resources>

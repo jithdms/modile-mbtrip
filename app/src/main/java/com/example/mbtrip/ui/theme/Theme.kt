@@ -1,40 +1,80 @@
 package com.example.mbtrip.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 
-// 다이어트/다크모드 컬러셋 (필요시 Primary 계열로 맞추거나 기존 유지)
-private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryVariant,
-    secondary = Secondary,
-    background = Background,
-    surface = Surface
+/*
+ * primary 는 TextButton 글자·입력칸 테두리·커서·탭 밑줄에도 쓰여서
+ * 흰 바탕에서 잘 읽히는 Aqua700 으로 두고, 브랜드 색 #A7E7F5 는 primaryContainer(면) 로 쓴다.
+ */
+private val LightColorScheme = lightColorScheme(
+    primary = Aqua700,
+    onPrimary = Color.White,
+    primaryContainer = Aqua300,
+    onPrimaryContainer = Ink,
+    secondary = Aqua600,
+    onSecondary = Color.White,
+    secondaryContainer = Aqua100,
+    onSecondaryContainer = Ink,
+    tertiary = Coral,
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFFE6E1),
+    onTertiaryContainer = Ink,
+    background = Aqua50,
+    onBackground = Ink,
+    surface = Color.White,
+    onSurface = Ink,
+    surfaceVariant = Field,
+    onSurfaceVariant = Muted,
+    surfaceTint = Aqua300,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Aqua50,
+    surfaceContainer = Color.White,
+    surfaceContainerHigh = Color.White,
+    surfaceContainerHighest = Aqua100,
+    outline = Faint,
+    outlineVariant = Line,
+    error = Danger,
+    onError = Color.White,
+    errorContainer = DangerSoft,
+    onErrorContainer = Danger,
+    scrim = Color(0x990F2A3A),
 )
 
-// 라이트모드 컬러셋 (우리가 지정한 여행 컨셉 색상 매핑!)
-private val LightColorScheme = lightColorScheme(
-    primary = Primary,           // #A9D7F5 스카이 블루
-    secondary = Secondary,       // 딥 블루
-    background = Background,     // 화사한 여행 배경색
-    surface = Surface,           // 카드 배경용 화이트
-    onPrimary = TextPrimary,     // Primary 위 글씨 색상
-    onSecondary = Surface,       // Secondary 위 글씨 색상
-    onBackground = TextPrimary,  // 배경 위 기본 글씨 색상
-    onSurface = TextPrimary      // 서페이스 위 글씨 색상
+private val DarkColorScheme = darkColorScheme(
+    primary = Aqua300,
+    onPrimary = Ink,
+    primaryContainer = Aqua800,
+    onPrimaryContainer = Aqua100,
+    secondary = Aqua400,
+    background = Color(0xFF0B1E29),
+    surface = Color(0xFF12293A),
+)
+
+/** 앱 전체 모서리: 작은 칩 12 · 카드 20 · 모달 28 */
+val MBShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )
 
 @Composable
 fun MBTripTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color는 디자인 통일을 위해 false로 두거나 원하시면 true로 유지하셔도 됩니다.
+    // 디자인 통일을 위해 기본은 false
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -51,6 +91,7 @@ fun MBTripTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = MBShapes,
         content = content
     )
 }

@@ -1,18 +1,29 @@
 package com.example.mbtrip.ui.component
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.example.mbtrip.ui.design.MBButton
+import com.example.mbtrip.ui.design.MBButtonStyle
+import com.example.mbtrip.ui.design.MBCard
+import com.example.mbtrip.ui.design.ScreenHeader
+import com.example.mbtrip.ui.design.SoftBadge
+import com.example.mbtrip.ui.theme.Ink
+import com.example.mbtrip.ui.theme.InkSoft
 
 /**
  * 1. 공통 버튼 (Primary / Secondary)
+ *  - Primary  : 브랜드 아쿠아 그라데이션 + 빛 스침 + 통통 눌림
+ *  - Secondary: 흰 바탕 + 아쿠아 테두리
  */
 @Composable
 fun MBTripButton(
@@ -22,35 +33,13 @@ fun MBTripButton(
     isPrimary: Boolean = true,
     enabled: Boolean = true
 ) {
-    if (isPrimary) {
-        Button(
-            onClick = onClick,
-            modifier = modifier.fillMaxWidth().height(50.dp),
-            enabled = enabled,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        ) {
-            Text(text = text, style = MaterialTheme.typography.labelLarge)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier.fillMaxWidth().height(50.dp),
-            enabled = enabled,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.secondary
-            ),
-            border = ButtonDefaults.outlinedButtonBorder.copy(
-                width = 1.5.dp
-            )
-        ) {
-            Text(text = text, style = MaterialTheme.typography.labelLarge)
-        }
-    }
+    MBButton(
+        text = text,
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        style = if (isPrimary) MBButtonStyle.Brand else MBButtonStyle.Outline,
+    )
 }
 
 /**
@@ -64,84 +53,33 @@ fun MBTripCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+    MBCard(modifier = modifier.fillMaxWidth(), onClick = onClick) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                ) {
-                    Text(
-                        text = dateInfo,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-            )
+            Text(text = title, style = MaterialTheme.typography.titleMedium, color = Ink, modifier = Modifier.weight(1f))
+            SoftBadge(dateInfo)
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = InkSoft)
     }
 }
 
 /**
- * 3. 공통 상단바 (TopAppBar)
+ * 3. 공통 상단바 — 흰 동그라미 뒤로가기 + 굵은 제목 (배경은 화면 하늘이 비치도록 투명).
+ * 상태바 여백은 MainActivity 의 Scaffold 가 이미 준다.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MBTripTopBar(
     title: String,
     onBackClick: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    TopAppBar(
-        title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        },
-        navigationIcon = {
-            if (onBackClick != null) {
-                IconButton(onClick = onBackClick) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "뒤로 가기",
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
-        },
+    ScreenHeader(
+        title = title,
+        onBack = onBackClick,
         actions = actions,
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background
-        )
     )
 }

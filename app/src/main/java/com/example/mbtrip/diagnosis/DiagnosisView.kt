@@ -1,7 +1,14 @@
 package com.example.mbtrip.diagnosis
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
+import android.view.MotionEvent
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
@@ -30,6 +37,8 @@ class DiagnosisView @JvmOverloads constructor(
     private val showResultButton: Button
     private val resultContainer: LinearLayout
     private val diagnosisScroll: ScrollView
+    // init 안에서 애니메이션이 쓰므로 init 보다 먼저 선언
+    private val density = context.resources.displayMetrics.density
 
     init {
         LayoutInflater.from(context).inflate(R.layout.diagnosis_screen, this, true)
@@ -43,6 +52,49 @@ class DiagnosisView @JvmOverloads constructor(
         buildQuestionCards()
         showResultButton.setOnClickListener { showResult() }
         findViewById<Button>(R.id.restartButton).setOnClickListener { restart() }
+
+        // ── 움직임 ──
+        listOf(R.id.diagnosisHeroIcon, R.id.diagnosisTitle, R.id.diagnosisSubtitle, R.id.progressText, R.id.questionProgress)
+            .forEachIndexed { i, id -> riseIn(findViewById(id), i) }
+        for (i in 0 until questionContainer.childCount) riseIn(questionContainer.getChildAt(i), i + 4)
+        listOf<View>(showResultButton, findViewById<View>(R.id.restartButton), findViewById<View>(R.id.continueButton))
+            .forEach { bounceOnPress(it) }
+    }
+
+    /* ───────── 애니메이션 도우미 ───────── */
+
+    /** 아래에서 떠오르며 나타남 (order 가 클수록 늦게) */
+    private fun riseIn(v: View, order: Int, distanceDp: Float = 12f) {
+        v.alpha = 0f
+        v.translationY = distanceDp * density
+        v.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setStartDelay(order * 60L)
+            .setDuration(480)
+            .setInterpolator(DecelerateInterpolator(1.6f))
+            .start()
+    }
+
+    /** 고른 답 칸이 살짝 눌렸다 돌아옴 */
+    private fun pop(v: View, to: Float = 0.97f) {
+        v.animate().cancel()
+        v.animate().scaleX(to).scaleY(to).setDuration(80).withEndAction {
+            v.animate().scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
+        }.start()
+    }
+
+    /** 누르는 동안 살짝 작아진다 (클릭은 그대로 전달) */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun bounceOnPress(v: View) {
+        v.setOnTouchListener { view, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> if (view.isEnabled) view.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(160).setInterpolator(DecelerateInterpolator()).start()
+            }
+            false
+        }
     }
 
     fun configure(
@@ -76,9 +128,13 @@ class DiagnosisView @JvmOverloads constructor(
                 val option = card.findViewById<TextView>(viewId)
                 option.text = question.options[optionIndex]
                 option.setOnClickListener {
+                    val firstTime = selectedAnswers[index] == null
                     selectedAnswers[index] = choice
                     updateOptionStyles(card, selectedAnswers[index])
+                    pop(option)
                     updateProgress()
+                    // 처음 고른 문항이면 다음 문항으로 부드럽게 내려간다
+                    if (firstTime) scrollToNext(index)
                 }
             }
             questionContainer.addView(card)
@@ -101,12 +157,43 @@ class DiagnosisView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 아직 답하지 않은 다음 문항을 화면 **가운데**로 스크롤한다.
+     * (다 답했으면 [진단 결과 보기] 버튼을 가운데로)
+     */
+    private fun scrollToNext(index: Int) {
+        val count = questionContainer.childCount
+        // 지금 문항 뒤에서 먼저 찾고, 없으면 앞쪽에서 빠뜨린 문항을 찾는다
+        val nextIndex = ((index + 1 until count) + (0 until index)).firstOrNull { selectedAnswers[it] == null }
+        val target: View = nextIndex?.let { questionContainer.getChildAt(it) } ?: showResultButton
+        postDelayed({ centerInScroll(target) }, 220)
+    }
+
+    /** target 의 가운데가 스크롤 화면의 가운데에 오도록 */
+    private fun centerInScroll(target: View) {
+        val content = diagnosisScroll.getChildAt(0) ?: return
+        // target 이 스크롤 내용 맨 위에서 얼마나 떨어져 있는지 (부모를 따라 올라가며 더한다)
+        var top = 0
+        var v: View? = target
+        while (v != null && v !== content) {
+            top += v.top
+            v = v.parent as? View
+        }
+        val y = top + target.height / 2 - diagnosisScroll.height / 2
+        val maxY = (content.height - diagnosisScroll.height).coerceAtLeast(0)
+        diagnosisScroll.smoothScrollTo(0, y.coerceIn(0, maxY))
+    }
+
     private fun updateProgress() {
         val answered = selectedAnswers.size
         progressText.text = "$answered / ${TravelDiagnosis.QUESTION_COUNT} 문항 응답"
-        questionProgress.progress = answered
+        // 막대는 부드럽게 차오른다 (max = 1000)
+        questionProgress.setProgress(answered * 1000 / TravelDiagnosis.QUESTION_COUNT, true)
+        val wasEnabled = showResultButton.isEnabled
         showResultButton.isEnabled = answered == TravelDiagnosis.QUESTION_COUNT
-        showResultButton.alpha = if (showResultButton.isEnabled) 1f else 0.5f
+        showResultButton.alpha = 1f
+        // 다 답하면 결과 버튼이 살짝 눌렸다 돌아오며 알려 준다
+        if (!wasEnabled && showResultButton.isEnabled) pop(showResultButton)
     }
 
     private fun showResult() {
@@ -117,10 +204,28 @@ class DiagnosisView @JvmOverloads constructor(
         greeting.text = "${displayName}님의 성향은..."
         val type = result.type
         // 기준표 구간별 결과: 이름 · 성향
-        findViewById<TextView>(R.id.resultLabel).text = "${type.emoji} ${type.title}\n(${type.label})"
-        findViewById<TextView>(R.id.resultPercent).text = "J ${result.jPercent}%  ↔  P ${result.pPercent}%"
+        findViewById<TextView>(R.id.resultLabel).text = "${type.title}\n(${type.label})"
+        // 숫자가 0 에서 올라간다
+        val percentView = findViewById<TextView>(R.id.resultPercent)
+        ValueAnimator.ofInt(0, result.jPercent).apply {
+            duration = 1100
+            startDelay = 350
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                val j = it.animatedValue as Int
+                percentView.text = "J ${j}%  ·  P ${100 - j}%"
+            }
+            start()
+        }
         // Stored Member.jpScore uses the opposite axis: 0 = J, 100 = P.
-        findViewById<ProgressBar>(R.id.resultSpectrum).progress = result.jPercent
+        val spectrum = findViewById<ProgressBar>(R.id.resultSpectrum)
+        spectrum.progress = 0
+        ObjectAnimator.ofInt(spectrum, "progress", 0, result.jPercent * 10).apply {
+            duration = 1100
+            startDelay = 350
+            interpolator = DecelerateInterpolator()
+            start()
+        }
         findViewById<TextView>(R.id.resultScores).text =
             "J 점수 ${result.jScore} / 20 · P 점수 ${result.pScore} / 20"
 
@@ -141,6 +246,13 @@ class DiagnosisView @JvmOverloads constructor(
         showResultButton.visibility = View.GONE
         resultContainer.visibility = View.VISIBLE
         diagnosisScroll.smoothScrollTo(0, 0)
+        // 결과가 위에서부터 차례로 떠오르고, 유형 이름은 톡 커진다
+        for (i in 0 until resultContainer.childCount) riseIn(resultContainer.getChildAt(i), i)
+        val label = findViewById<View>(R.id.resultLabel)
+        label.scaleX = 0.96f
+        label.scaleY = 0.96f
+        label.animate().scaleX(1f).scaleY(1f).setStartDelay(120).setDuration(300)
+            .setInterpolator(DecelerateInterpolator()).start()
     }
 
     private fun restart() {
@@ -157,5 +269,6 @@ class DiagnosisView @JvmOverloads constructor(
         resultContainer.visibility = View.GONE
         updateProgress()
         questionContainer.post { diagnosisScroll.smoothScrollTo(0, 0) }
+        for (i in 0 until questionContainer.childCount) riseIn(questionContainer.getChildAt(i), i)
     }
 }

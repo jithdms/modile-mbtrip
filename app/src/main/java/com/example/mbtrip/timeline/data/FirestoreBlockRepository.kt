@@ -7,6 +7,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -26,19 +28,25 @@ class FirestoreBlockRepository(
     private fun blocksOf(tripId: String) =
         db.collection("trips").document(tripId).collection("blocks")
 
-    override fun observeBlocks(tripId: String): Flow<List<Block>> = callbackFlow {
-        val registration = blocksOf(tripId).addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                close(error) // ViewModel 이 "불러오지 못했어요" 알림을 띄움
-                return@addSnapshotListener
-            }
-            val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                doc.data?.let { blockFromFirestore(doc.id, tripId, it) } // 형식이 틀린 문서는 건너뜀
-            }
-            trySend(list)
-        }
-        awaitClose { registration.remove() }
-    }
+    override fun observeBlocks(tripId: String): Flow<List<Block>> = flow {
+        // 로그인이 끝난 뒤 듣기 시작하고, 끊기면 다시 붙는다 (두 사람이 동시에 들어와도 계속 실시간)
+        ensureSignedIn()
+        emitAll(
+            callbackFlow {
+                val registration = blocksOf(tripId).addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        close(error) // 아래 keepListening 이 잠시 뒤 다시 듣는다
+                        return@addSnapshotListener
+                    }
+                    val list = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                        doc.data?.let { blockFromFirestore(doc.id, tripId, it) } // 형식이 틀린 문서는 건너뜀
+                    }
+                    trySend(list)
+                }
+                awaitClose { registration.remove() }
+            },
+        )
+    }.keepListening("blocks/$tripId", fallback = emptyList())
 
     override suspend fun upsert(block: Block) {
         val data = block.toFirestoreMap() + (BlockFields.UPDATED_AT to FieldValue.serverTimestamp())

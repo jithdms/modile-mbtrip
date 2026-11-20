@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import android.widget.Toast
@@ -37,26 +38,69 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mbtrip.R
 import com.example.mbtrip.timeline.model.Member
+import com.example.mbtrip.triplog.photoModel
+import coil.compose.AsyncImage
+import androidx.compose.runtime.key
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterPop
+import com.example.mbtrip.ui.theme.Aqua100
+import com.example.mbtrip.ui.theme.Faint
+import com.example.mbtrip.ui.theme.Aqua300
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua700
 
 /**
  * 동그란 프로필 사진.
- * 사진을 등록하지 않은 사람(photoUrl == null)은 기본 사진(res/drawable/default_profile.jpg).
- *
- * TODO(로그인·사진 업로드 붙일 때): photoUrl 이 있으면 인터넷 사진을 보여줘야 함.
- *   → 이미지 라이브러리(Coil) 추가 후 AsyncImage(model = member.photoUrl, ...) 로 바꾸기.
- *   지금은 photoUrl 이 있어도 기본 사진을 보여준다.
+ *  - photoUrl 이 "https://…" 면 인터넷 사진, "res:user1" 이면 앱 안 그림 (Coil 로 읽음)
+ *  - 사진을 등록하지 않은 사람(photoUrl == null)·못 읽은 사진은 기본 사진(res/drawable/default_avatar.xml)
  */
 @Composable
 fun MemberAvatar(member: Member, size: Dp = 44.dp, modifier: Modifier = Modifier) {
-    Image(
-        painter = painterResource(R.drawable.default_profile),
-        contentDescription = "${member.nickname} 프로필",
-        contentScale = ContentScale.Crop,
-        modifier = modifier
+    val context = LocalContext.current
+    val fallback = painterResource(R.drawable.default_avatar)
+    val model = remember(member.photoUrl) { photoModel(context, member.photoUrl) }
+    // 여행 중인 친구 → 오른쪽 아래 ✈ 배지
+    val travelingTo = com.example.mbtrip.friends.Friends.travelingTo(member.userId)
+    val label = "${member.nickname} 프로필" + if (travelingTo != null) ", 여행 중" else ""
+    Box(modifier.size(size)) {
+        val shaped = Modifier
             .size(size)
             .clip(CircleShape)
-            .border(1.dp, TimelineColors.Border, CircleShape),
-    )
+            .border(1.dp, com.example.mbtrip.ui.theme.Line, CircleShape)
+        if (model == null) {
+            Image(painter = fallback, contentDescription = label, contentScale = ContentScale.Crop, modifier = shaped)
+        } else {
+            AsyncImage(
+                model = model,
+                contentDescription = label,
+                contentScale = ContentScale.Crop,
+                placeholder = fallback,
+                error = fallback,
+                modifier = shaped,
+            )
+        }
+        if (travelingTo != null) {
+            val badge = (size * 0.4f).coerceIn(16.dp, 30.dp)
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = badge * 0.15f, y = badge * 0.1f)
+                    .size(badge)
+                    .background(com.example.mbtrip.ui.theme.Aqua700, CircleShape)
+                    .border((badge / 10f).coerceAtLeast(1.5.dp), Color.White, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                com.example.mbtrip.ui.design.MBIcon(
+                    R.drawable.ic_mb_flight, size = badge * 0.6f, tint = Color.White,
+                    contentDescription = null,
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -93,17 +137,33 @@ fun MemberRow(
 
     // 초대해서 사람이 많아지면 옆으로 밀어서 보기
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // [+] 초대 — 점선 동그라미
         Box(
-            Modifier.size(avatarSize).clip(CircleShape)
-                .border(1.dp, TimelineColors.Border, CircleShape)
-                .background(Color(0xFFF7F7F7))
+            Modifier
+                .size(avatarSize)
                 // 다른 화면(친구 목록)으로 넘어가지 않고 이 자리에서 초대 모달만 띄운다
-                .clickable { inviting = true },
+                .bouncyClick(CircleShape) { inviting = true }
+                .background(Color.White, CircleShape)
+                .drawBehind {
+                    val stroke = 1.2.dp.toPx()
+                    drawCircle(
+                        color = Faint,
+                        radius = size.minDimension / 2 - stroke / 2,
+                        style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
+                    )
+                },
             contentAlignment = Alignment.Center,
-        ) { Text("+", fontSize = 24.sp, color = TimelineColors.SubText) }
-        shown.forEach { m ->
+        ) { Text("+", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Aqua700) }
+        shown.forEachIndexed { i, m ->
             // 누르면 그 사람 정보 카드
-            MemberAvatar(m, size = avatarSize, modifier = Modifier.clip(CircleShape).clickable { viewing = m })
+            key(m.userId) {
+                MemberAvatar(
+                    m, size = avatarSize,
+                    modifier = Modifier
+                        .enterPop(i + 1)
+                        .bouncyClick(CircleShape) { viewing = m },
+                )
+            }
         }
     }
 

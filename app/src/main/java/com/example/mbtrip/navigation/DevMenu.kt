@@ -1,9 +1,6 @@
 package com.example.mbtrip.navigation
 
 import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +23,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.mbtrip.R
+import com.example.mbtrip.triplog.TripLogDetailScreen
+import com.example.mbtrip.triplog.TripLogGalleryScreen
+import com.example.mbtrip.ui.design.bouncyClick
+import com.example.mbtrip.ui.design.enterFromBelow
+import com.example.mbtrip.ui.theme.Aqua50
+import com.example.mbtrip.ui.theme.Aqua500
+import com.example.mbtrip.ui.theme.Aqua700
+import com.example.mbtrip.ui.theme.Muted
 
 /** 화면 목록 한 줄: 이름 · 담당 · 경로 */
 private data class DevEntry(val name: String, val owner: String, val route: String)
@@ -56,7 +61,7 @@ fun DevMenuScreen(onOpen: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(Aqua50)
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -64,20 +69,20 @@ fun DevMenuScreen(onOpen: (String) -> Unit) {
         Text("개발용 화면 목록", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Text(
             "발표 전에는 NavGraph.kt 의 SHOW_DEV_MENU 를 false 로 바꿔 주세요.",
-            fontSize = 13.sp, color = Color(0xFF757575),
+            fontSize = 13.sp, color = Muted,
         )
-        entries.forEach { e ->
+        entries.forEachIndexed { i, e ->
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFFF4F4F4))
-                    .clickable { onOpen(e.route) }
+                    .enterFromBelow(i, delayStepMs = 35)
+                    .bouncyClick(RoundedCornerShape(16.dp), scaleDown = 0.97f, elevation = 3.dp, shadowColor = Aqua500) { onOpen(e.route) }
+                    .background(Color.White)
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(e.name, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                if (e.owner.isNotEmpty()) Text(e.owner, fontSize = 13.sp, color = Color(0xFF757575))
+                if (e.owner.isNotEmpty()) Text(e.owner, fontSize = 13.sp, color = Aqua700)
             }
         }
     }
@@ -94,33 +99,17 @@ fun TripReviewXmlPreview() {
 
 /**
  * 여행 모임 로그 — 사진 모아보기 (res/layout/activity_trip_log_gallery.xml).
- * 안의 사진(ImageView)을 누르면 onPhotoClick → 후기 상세로 이동.
+ * 데이터·동작은 triplog/TripLogScreens.kt (Firestore trips/{id}/reviews 를 읽음).
+ *  - 왼쪽 위 뒤로 가기 → onBack
+ *  - 사진을 누르면 onOpenLog → 후기 상세
  */
 @Composable
-fun TripLogGalleryXml(onPhotoClick: () -> Unit) {
-    AndroidView(
-        factory = { ctx ->
-            LayoutInflater.from(ctx).inflate(R.layout.activity_trip_log_gallery, null, false).also { root ->
-                root.forEachImageView { it.setOnClickListener { onPhotoClick() } }
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
-    )
+fun TripLogGalleryXml(onBack: () -> Unit, onOpenLog: () -> Unit) {
+    TripLogGalleryScreen(onBack = onBack, onOpenLog = onOpenLog)
 }
 
 /** 여행 모임 로그 — 후기 상세 (res/layout/activity_trip_log_detail.xml) */
 @Composable
-fun TripLogDetailXml() {
-    AndroidView(
-        factory = { ctx -> LayoutInflater.from(ctx).inflate(R.layout.activity_trip_log_detail, null, false) },
-        modifier = Modifier.fillMaxSize(),
-    )
-}
-
-/** 화면 안의 모든 ImageView 를 찾아서 실행 (사진 그리드에 id 가 없어서) */
-private fun View.forEachImageView(action: (ImageView) -> Unit) {
-    when (this) {
-        is ImageView -> action(this)
-        is ViewGroup -> for (i in 0 until childCount) getChildAt(i).forEachImageView(action)
-    }
+fun TripLogDetailXml(onBack: () -> Unit, onEdit: (com.example.mbtrip.triplog.TripLog) -> Unit = {}) {
+    TripLogDetailScreen(onBack = onBack, onEdit = onEdit)
 }
